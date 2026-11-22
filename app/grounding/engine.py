@@ -40,6 +40,9 @@ def _stem(token: str) -> str:
     return token[:5] if len(token) >= 5 else token
 
 
+MIN_BODY_HITS = 2  # distinct query words a document body must contain when no title/tag word matches
+
+
 class GroundingContext(BaseModel):
     model_config = ConfigDict(frozen=True)
     mode: str
@@ -70,8 +73,11 @@ class GroundingEngine:
         for p in self.programs:
             title_tags = {_stem(t) for t in self._tokens(p["title"] + " " + " ".join(p.get("tags", [])))}
             body = {_stem(t) for t in self._tokens(p["content"])}
-            score = 3 * len(q & title_tags) + len(q & body)  # title/tag hits weigh more
-            if score > 0:
+            title_hits, body_hits = len(q & title_tags), len(q & body)
+            score = 3 * title_hits + body_hits  # title/tag hits weigh more
+            # Off-topic guard: one stray body word ("weather", "match") is not evidence the document answers the
+            # question. Need a title/tag match, or at least two distinct body words.
+            if title_hits >= 1 or body_hits >= MIN_BODY_HITS:
                 scored.append((score, p))
         scored.sort(key=lambda x: x[0], reverse=True)
         if not scored:

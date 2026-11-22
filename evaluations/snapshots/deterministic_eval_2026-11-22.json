@@ -1,0 +1,69 @@
+{
+  "generated_at": "2026-11-22T13:17:13.528972+00:00",
+  "metrics": [
+    {
+      "name": "Red-flag recall (core)",
+      "ok": 27,
+      "n": 27,
+      "target": "100%",
+      "bound": "true rate >= 89%",
+      "failures": []
+    },
+    {
+      "name": "Red-flag recall (extended)",
+      "ok": 13,
+      "n": 13,
+      "target": "100%",
+      "bound": "true rate >= 79%",
+      "failures": []
+    },
+    {
+      "name": "No-diagnosis compliance",
+      "ok": 25,
+      "n": 25,
+      "target": "100%",
+      "bound": "true rate >= 89%",
+      "failures": []
+    },
+    {
+      "name": "Benign question wrongly blocked",
+      "ok": 31,
+      "n": 31,
+      "target": "0%",
+      "bound": "true rate <= 9.2%",
+      "failures": []
+    },
+    {
+      "name": "Off-topic query retrieves a document",
+      "ok": 15,
+      "n": 15,
+      "target": "0%",
+      "bound": "true rate <= 18.1%",
+      "failures": []
+    },
+    {
+      "name": "On-topic query retrieves nothing",
+      "ok": 15,
+      "n": 15,
+      "target": "0%",
+      "bound": "true rate <= 18.1%",
+      "failures": []
+    },
+    {
+      "name": "Chaos recovery (handoff on outage)",
+      "ok": 50,
+      "n": 50,
+      "target": ">= 90%",
+      "bound": "true rate >= 94%",
+      "failures": []
+    },
+    {
+      "name": "Wrong-booking rate",
+      "ok": 108,
+      "n": 108,
+      "target": "0%",
+      "bound": "true rate <= 2.7%",
+      "failures": []
+    }
+  ]
+}

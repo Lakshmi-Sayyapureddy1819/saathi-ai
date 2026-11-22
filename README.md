@@ -238,14 +238,21 @@ logged; a production deployment needs retention limits on both.
 
 - **Langfuse:** node and tool spans verified live; LLM generation spans and the UI view not yet (see Observability).
 - **Retrieval is lexical** (stemming + a small Hinglish lexicon in `app/grounding/engine.py`). New Hindi vocabulary needs
-  a lexicon entry until embedding retrieval is added. *Known issue:* off-topic queries can still retrieve an unrelated
-  document (e.g. "what is the weather" retrieves the Sheetali Pranayama doc because it mentions summer weather);
-  there is no off-topic rejection, so the coach prompt must decline to use irrelevant context. Not evaluated.
-- **No-diagnosis rule false positive:** "Is it heart healthy to eat oats?" gets the canned no-diagnosis reply, because the
-  rule treats "is it ... heart" as a diagnosis question. It errs on the cautious side but blocks a legitimate question.
+  a lexicon entry until embedding retrieval is added. Off-topic queries are rejected: a document needs a title/tag match
+  or at least two distinct body words (`MIN_BODY_HITS`), so "what is the weather" no longer retrieves the Sheetali
+  Pranayama doc (15 off-topic and 15 on-topic queries in `evaluations/deterministic_eval.py`). Trade-off: an on-topic
+  question whose only link to a document is one body word now retrieves nothing and gets the "no matching document" reply.
+- **No-diagnosis rule:** "Is it heart healthy to eat oats?" used to get the canned no-diagnosis reply; "is it heart/thyroid
+  ... healthy / friendly / safe / good / diet / food" is now treated as a food question. Medication requests ("should I take
+  metformin") are now caught as well. The rule is regex-based, so unusual phrasings can still slip through or be over-blocked
+  (31 benign controls, 0 blocked, in the deterministic eval).
 - **Generic requests:** "book a blood test" asks *which test*; the catalogue deliberately ignores generic words like
   "blood", "test", "panel", so they never match packages on their own.
-- **Evaluation evidence is thin:** wrong-booking n=4 and chaos recovery n=5, red-flag n=8; the faithfulness judge is
+- **Evaluation evidence:** the golden-set numbers are still small (wrong-booking n=4, chaos n=5, red-flag n=8), so
+  `python -m evaluations.deterministic_eval` adds an offline, free run with n=27 core red flags, 13 other emergencies,
+  25 diagnosis requests, 31 benign controls, 108 booking scenarios and 50 outage runs (`EVALS.md`). Its first run found
+  real misses in the safety gate (20/27 core red flags); the gate was extended and the set now passes, so those results
+  are tuned to that set and are not a blind test. The faithfulness judge is
   not human-validated, is from the same vendor as the generator and its negative control has 3 cases (details in
   `EVALS.md`). Strict lexical groundedness cannot score Hindi/Hinglish translations.
 - **Judge kappa is N/A** until two independent annotators label the 15 frozen responses.
@@ -258,7 +265,10 @@ logged; a production deployment needs retention limits on both.
   (`pending_checkups` in `data/members.json`, English or Hinglish), pre-fills the booking draft, and then every reply goes
   through the normal workflow: safety gate and red-flag escalation first, then slot read-back and confirmation. A plain
   "no" ends the call; "no, I have chest pain" still escalates. Dialling, STT and TTS are simulated (as for inbound
-  voice); there is no real telephony provider, and no scheduler decides *when* to call. Covered by `tests/test_outbound_call.py`.
+  voice); there is no real telephony provider. `app/channels/outbound_scheduler.py` decides who to call and when (due within 14 days
+  or overdue, calling window 09:00-19:00, at most 3 attempts 4 h apart, do-not-call list, no repeat after a booking or a
+  decline) behind a `Dialler` interface that a provider would implement; nothing runs it on a timer yet. Covered by
+  `tests/test_outbound_call.py` and `tests/test_outbound_scheduler.py`.
 - **Voice eval path:** audio is simulated: ASR errors are injected as text, STT is a fixed sleep and TTS is text, so real
   STT/TTS latency is not measured. Read-back, wrong-booking, latency and time-to-first-audio are measured through the real
   workflow (`EVALS.md`, Voice). Wellness answers by voice miss the 1.5 s budget (LLM latency, no streaming to TTS).

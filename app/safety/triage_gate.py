@@ -26,30 +26,45 @@ COMPILED_RED_FLAGS = {
     # safety gate: every accepted variant is visible here and covered by tests/test_red_flag_variants.py).
     "CARDIAC_EMERGENCY": re.compile(
         r"\b((?:chest|chst|chesst|cheast)\s*(?:pain|pian|pane|paine|tightness|pressure|heaviness)|(?:heart|hart)\s*attac?k|"
-        r"stroke|lakwa|left\s*arm\s*pain|(?:seene|sine|seeney)\s*(?:mein|me|main|mei)\s*(?:dard|jalan|dabav|dabaav|bhaari|bhari)|"
-        r"(?:dil|dill)\s*ka\s*(?:daura|dora)|radiating\s*pain)\b",
+        r"stroke|lakwa|left\s*arm\s*pain|(?:seene|sine|seeney)\s*(?:mein|me|main|mei)\s*(?:\w+\s+){0,2}(?:dard|jalan|dabav|dabaav|bhaari|bhari)|"
+        r"(?:dil|dill)\s*ka\s*(?:daura|dora)|radiating\s*pain|"
+        r"chest\s*(?:is\s*)?(?:hurt\w*|ach\w*|burn\w*)|pressure\s*(?:on|in)\s*(?:my\s*)?chest|"
+        r"left\s*arm\s*(?:feels?\s*)?(?:numb|heavy)|numb(?:ness)?\s*(?:in|on)\s*(?:my\s*)?left\s*arm|"
+        r"(?:chhati|chhaati|chaati|chati)\s*(?:mein|me|main|mei)\s*(?:\w+\s+){0,2}(?:dard|jalan|dabav|dabaav)|"
+        r"face\s*(?:is\s*)?droop\w*|slurred\s*speech|speech\s*(?:is\s*)?slurred|sudden\s*weakness|"
+        r"weakness\s*(?:on|in)\s*(?:one|the\s*left|the\s*right)\s*side|numbness\s*on\s*one\s*side)\b",
         re.IGNORECASE
     ),
     # Respiratory / Syncope
     "RESPIRATORY_SYNCOPE_EMERGENCY": re.compile(
         r"\b(breathless(?:ness)?|short(?:ness)?\s*of\s*breath|cannot\s*breat?he|can'?t\s*breat?he?|"
         r"(?:difficulty|trouble|struggling|hard)\s*(?:to\s*|in\s*)?breath(?:e|ing)|gasping|"
-        r"(?:saans|sans|saas)\s*(?:phool|nahi|ruk|lene\s*mein\s*takleef)|(?:dum|dam)\s*ghut|"
+        r"(?:saans|sans|saas)\s*(?:phool|nahi|ruk)|(?:saans|sans|saas)\s*lene\s*(?:mein|me)\s*(?:\w+\s+){0,2}(?:takleef|dikkat|mushkil)|"
+        r"(?:dum|dam)\s*ghut|(?:cannot|can'?t|unable\s*to)\s*(?:catch|get)\s*(?:my|his|her|a)\s*(?:breath|air)|"
+        r"chakk?h?ar.{0,40}\bgir\s*(?:gaya|gayi|gaye|jaunga|jaungi)\b|"
         r"faint(?:ed|ing)?|pass(?:ed|ing)?\s*out|unconscious|behosh(?:i)?|chakkhar|collapsed|not\s*breathing)\b",
         re.IGNORECASE
     ),
     # Acute Self-Harm / Suicidal Ideation
     "SELF_HARM_EMERGENCY": re.compile(
-        r"\b(suicid(?:e|al)?|sucide|suiside|kill\s*my\s*self|end\s*my\s*life|end\s*it\s*all|want\s*to\s*die|"
+        r"\b(suicid(?:e|al)?|sucide|suiside|kill(?:ing)?\s*my\s*self|end\s*my\s*life|end\s*it\s*all|want\s*to\s*die|"
         r"(?:don'?t|dont|do\s*not)\s*want\s*to\s*(?:live|be\s*alive)|no\s*reason\s*to\s*live|"
         r"marna\s*chaht[ai]|mar\s*jan[ae]\s*chaht[ai]|jeena\s*nahi\s*chaht[ai]|jeene\s*ka\s*mann\s*nahi|"
         r"zindagi\s*khatam|aatmahatya|khudkushi|jaan\s*dena|harm\s*myself|nuksan\s*pahuncha|marne\s*ka\s*mann|nuksan\s*karna)\b",
         re.IGNORECASE
     ),
+    # Seizure / severe allergic reaction / poisoning or overdose
+    "SEIZURE_ALLERGY_POISON_EMERGENCY": re.compile(
+        r"\b(seizures?|convulsions?|mirgi|(?:throat|tongue|lips|face)\s*(?:is\s*)?swell\w*|anaphyla\w*|"
+        r"(?:swallowed|drank|ate)\s*(?:\w+\s+){0,2}(?:poison|bleach|pesticide)|overdosed|took\s*an?\s*overdose|"
+        r"took\s*too\s*many\s*(?:pills|tablets)|zeher\s*(?:kha|pi))\b",
+        re.IGNORECASE
+    ),
     # Severe Hemorrhage / Vomiting Blood. "khoon" alone is an emergency word, EXCEPT when it is plainly a lab request
     # ("khoon ki jaanch", "khoon ka test"), which is how members ask for a blood test in Hinglish.
     "HEMORRHAGE_EMERGENCY": re.compile(
-        r"\b(bleeding\s*(?:heavily|badly|profusely|a\s*lot)|coughing\s*blood|vomit.*blood|blood.*vomit|"
+        r"\b(bleeding\s*(?:heavily|badly|profusely|a\s*lot)|coughing\s*(?:up\s*)?blood|heavy\s*bleeding|"
+        r"bleeding\s*(?:that\s*)?(?:will\s*not|won'?t|does\s*not|doesn'?t)\s*stop|vomit.*blood|blood.*vomit|"
         r"khoon(?!\s*(?:ki|ka|ke)\s*(?:jaanch|janch|test|report|checkup|check)\b)|vomiting\s*blood|khoon\s*ki\s*ulti|"
         r"uncontrolled\s*bleeding|severe\s*bleeding|heavy\s*blood\s*loss)\b",
         re.IGNORECASE
@@ -67,6 +82,8 @@ PATTERNS_YELLOW_WARNING = {
         r"|am\s+i\s+(?:suffering\s+from|diabetic|sick|ill|dying)"
         r"|(?:is|could|might|can)\s+(?:this|it|that)\s+(?:(?:be|mean|a\s+sign\s+of)\s+)?(?:a\s+|an\s+)?"
         r"(?:cancer|diabetes|diabetic|malaria|dengue|thyroid|typhoid|covid|tb|tumou?r|infection|disease|heart)"
+        # "is it heart healthy / heart friendly / thyroid safe ..." asks about food or habits, not about a diagnosis
+        r"(?!\s*(?:healthy|friendly|safe|good|smart|diet|food|health))"
         r"|what\s+(?:disease|illness|condition)\s+do\s+i\s+have"
         r"|what(?:'s|\s+is)\s+wrong\s+with\s+me"
         r"|(?:diagnose|diagnosis)\b"
@@ -74,6 +91,10 @@ PATTERNS_YELLOW_WARNING = {
         r"|mujhe\s+(?:\w+\s+)?(?:hai\s+kya|ho\s+gaya\s+hai\s+kya|ki\s+bimari\s+hai)"
         r"|kya\s+mujhe\s+\w+\s+(?:hai|ho\s+sakta)"
         r"|mujhe\s+(?:\w+\s+){0,2}hai\s+ya\s+nahi"
+        r"|(?:which|what)\s+(?:medicine|medication|tablet|drug|pill)s?\s+(?:should|can|do)\s+i\s+(?:take|use|have)"
+        r"|should\s+i\s+(?:take|stop|start|increase|skip)\s+(?:\w+\s+){0,2}(?:medicine|medication|tablets?|pills?|"
+        r"metformin|insulin|thyroxine|levothyroxine|statins?|paracetamol|antibiotics?)"
+        r"|(?:konsi|kaun\s*si)\s+(?:dawa|dawai|medicine|tablet)"
         r")",
         re.IGNORECASE,
     )

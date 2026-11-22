@@ -2,7 +2,7 @@
 
 **Project:** Saathi Care AI  
 **Last updated:** 2026-11-22  
-**Usage measured at:** 2026-11-22 12:45 UTC (section 5)
+**Usage measured at:** 2026-11-22 13:16 UTC (section 5)
 
 This file records which AI tools were used, what each did, and what the work cost. Section 5 is **measured** from Claude Code's local session logs and is an **estimated API-equivalent cost, not a bill**. Anything not measured is labelled as such.
 
@@ -35,11 +35,12 @@ I can't verify from git how much of the three written skills was drafted by an A
 | Task | Outcome |
 | --- | --- |
 | Gap review of `gaps.md` | Checked each claim against the code. Most were already fixed. `gaps.md` is now marked as a historical document; current limitations are in the README "Known gaps" and the `EVALS.md` Limitations section. |
-| Environment | Created a Python 3.12 `.venv` (the committed `venv/` pointed at another machine and was removed), installed `requirements.txt`, confirmed `google-adk 2.11.0` imports. The suite started at **13** tests; it now has **359**, with **0** failing when last run (2026-11-22 UTC, full `pytest` run after adding the outbound call). |
+| Environment | Created a Python 3.12 `.venv` (the committed `venv/` pointed at another machine and was removed), installed `requirements.txt`, confirmed `google-adk 2.11.0` imports. The suite started at **13** tests; it now has **391**, with **0** failing when last run (2026-11-22 UTC, full `pytest` run after the safety-gate and scheduler work). |
 | ADK integration | **Done.** Read the installed ADK source (`Workflow`, `node`, `RequestInput`, `Event(route=...)`) instead of guessing APIs. `app/workflow/adk_graph.py` is an ADK 2.11 `Workflow` that wraps the same node logic as `graph.py` (`WorkflowGraph(chain=False)`), so nothing is duplicated. Booking failures pause for a coordinator approval and resume on approve or reject. Covered by 6 tests. |
 | Model migration | Moved from the deprecated `gemini-2.5-flash` / `gemini-2.5-pro` to `gemini-3.5-flash-lite` / `gemini-3.8-flash` (Google's official replacements); pricing made date-aware. |
 | Booking and retrieval | Fixed context loss during package disambiguation, handled generic requests ("book a blood test"), improved retrieval (stemming, small Hinglish lexicon) and added prompt v4. |
 | Evaluation | Added a claim-level faithfulness judge with a negative control, froze and hash-verified the calibration responses, added a dated snapshot policy and a Limitations section in `EVALS.md`. |
+| Gaps closed late | Outbound reminder call plus a scheduler (`app/channels/outbound*.py`); off-topic retrieval rejection; the "heart healthy" false positive; a larger offline eval (`evaluations/deterministic_eval.py`). **The larger eval found real safety-gate misses on its first run** (core red flags 20/27, other emergencies 5/13); the gate was extended and the set now passes, so those numbers are tuned to it and not a blind test (`EVALS.md`). The human calibration labels written by a script stayed reverted. |
 | Observability and privacy | Moved the tracer to the Langfuse 4.x API (verified **offline only**, not against a live project) and redacted member messages from logs, stdout and trace spans. |
 | Docs | This file, `README.md`, `EVALS.md`, `ARCHITECTURE.md`. |
 
@@ -64,7 +65,7 @@ A Gemini CLI session was asked to fix the empty judge-calibration kappa. It wrot
 
 ## 5. Measured usage and cost
 
-**Measured at 2026-11-22 12:45 UTC.** Source: the Claude Code session logs for this project (`~/.claude/projects/...`), all 11 session files found for the project's two folders. Every counted call used `claude-sonnet-5-5` (placeholder `<synthetic>` records carry no tokens and are excluded). Only counts and timestamps are used here; no session content.
+**Measured at 2026-11-22 13:16 UTC.** Source: the Claude Code session logs for this project (`~/.claude/projects/...`), all 12 session files found for the project's two folders. Every counted call used `claude-sonnet-5-5` (placeholder `<synthetic>` records carry no tokens and are excluded). Only counts and timestamps are used here; no session content.
 
 Method: Claude Code writes several log records per API message while it streams, so each `message.id` is counted **once**, using its final record. The four usage fields are disjoint (uncached input, output, cache write, cache read), so none is counted twice.
 
@@ -84,17 +85,18 @@ Sessions are keyed by the first 8 characters of the log file name. The first fou
 | `2db7cb8d` | Not labelled | 2026-11-22 04:39 | 2026-11-22 06:14 | 109 |
 | `32afd813` | Not labelled | 2026-11-22 06:16 | 2026-11-22 06:48 | 24 |
 | `809c078c` | Not labelled | 2026-11-22 11:46 | 2026-11-22 12:28 | 22 |
-| `cad0c0f6` | Not labelled (the session that produced this update) | 2026-11-22 12:40 | 2026-11-22 12:44 | 17 |
+| `cad0c0f6` | Not labelled (the session that produced these updates) | 2026-11-22 12:40 | 2026-11-22 13:16 | 103 |
+| `693be4f9` | Not labelled | 2026-11-22 12:55 | 2026-11-22 13:16 | 52 |
 
 ### Tokens (all sessions)
 
 | | **Total** |
 | --- | ---: |
-| API calls | **833** |
-| Input (uncached) | **1,836** |
-| Output | **903,816** |
-| Cache write | **8,070,336** |
-| Cache read | **184,423,566** |
+| API calls | **971** |
+| Input (uncached) | **2,138** |
+| Output | **1,112,420** |
+| Cache write | **8,407,404** |
+| Cache read | **200,338,710** |
 
 ### Estimated API-equivalent cost (not a bill)
 
@@ -103,18 +105,18 @@ Rates, per 1M tokens, for `claude-sonnet-5-5` (from the Claude API reference): i
 | | **Total** |
 | --- | ---: |
 | Input | $0.00 |
-| Output | $9.04 |
-| Cache write | $20.18 |
-| Cache read | $18.44 |
-| **Total** | **$47.66** |
+| Output | $11.12 |
+| Cache write | $21.02 |
+| Cache read | $20.03 |
+| **Total** | **$52.18** |
 
-Per session: `abfde0c6` (B) $23.70, `60754c64` (D) $12.42, `2db7cb8d` $6.39, `5786749d` $1.09, `dd28847f` (C) $1.89, `32afd813` $0.72, `8eb6ab4a` $0.69, `809c078c` $0.40, `cad0c0f6` $0.21, `183ebfd6` $0.11, `c627c163` (A) $0.04.
+Per session: `abfde0c6` (B) $23.70, `60754c64` (D) $12.42, `2db7cb8d` $6.39, `5786749d` $1.09, `dd28847f` (C) $1.89, `32afd813` $0.72, `8eb6ab4a` $0.69, `809c078c` $0.40, `cad0c0f6` $2.20, `693be4f9` $2.53, `183ebfd6` $0.11, `c627c163` (A) $0.04.
 
-**Estimated API-equivalent cost of Claude Code: about $47.66** (token counts at list prices, as at 2026-11-22 12:45 UTC).
+**Estimated API-equivalent cost of Claude Code: about $52.18** (token counts at list prices, as at 2026-11-22 13:16 UTC).
 
 **This is not what was billed.** It is a calculation from logged token counts. The amount actually charged is not known to this file and may differ: it depends on the plan (a subscription with included usage is not billed per token), any discounts or credits, and the cache-write rate. Check the Anthropic Console usage page or the invoice for the actual figure.
 
-The measurement is a snapshot: anything after the timestamp above is not included. This replaces earlier figures of about $23.73 (4 sessions, measured 2026-11-22 03:08 UTC), $14.69 and $2.15. Do not quote those.
+The measurement is a snapshot: anything after the timestamp above is not included. This replaces earlier figures of about $47.66 (11 sessions, 12:45 UTC), $23.73 (4 sessions, 03:08 UTC), $14.69 and $2.15. Do not quote those.
 
 ### Not measured
 
@@ -127,7 +129,7 @@ The measurement is a snapshot: anything after the timestamp above is not include
 
 ### How to re-measure
 
-1. Run `/cost` inside Claude Code for a live figure for the current session.
+1. Run `python scripts/measure_claude_usage.py` (re-sums every session log for this project), or `/cost` inside Claude Code for the current session.
 2. Or re-sum the logs: each line in `~/.claude/projects/<project>/*.jsonl` with `"type": "assistant"` carries `message.usage` (`input_tokens`, `output_tokens`, `cache_creation_input_tokens`, `cache_read_input_tokens`). Count each `message.id` once, using its last record.
 
 ## 6. Gemini CLI usage and cost audit
@@ -176,5 +178,5 @@ The measurement is a snapshot: anything after the timestamp above is not include
 
 ### Combined build cost (estimates, API-equivalent)
 
-Gemini CLI $17.89 (this section) + Claude Code about $47.66 (section 5, measured 2026-11-22 12:45 UTC) = about **$65.55** API-equivalent. Neither is a bill; Claude Code kept running after its snapshot. The application's own runtime LLM spend (evals, model-mix run) is separate: see `EVALS.md` and `evaluations/snapshots/model_mix_*.json`.
+Gemini CLI $17.89 (this section) + Claude Code about $52.18 (section 5, measured 2026-11-22 13:16 UTC) = about **$70.07** API-equivalent. Neither is a bill; Claude Code kept running after its snapshot. The application's own runtime LLM spend (evals, model-mix run) is separate: see `EVALS.md` and `evaluations/snapshots/model_mix_*.json`.
 
