@@ -37,7 +37,73 @@ python voice_demo.py                  # simulated voice call: generic request ->
 Without API keys the app still runs: LLM calls return a clearly flagged `[MOCK:...]` response and are excluded from
 metrics. Booking, safety and routing need no LLM.
 
-## Tests and evaluations
+## Web UI (localhost)
+
+Stack: **React 19 + TypeScript + Vite** frontend (`frontend/`), **FastAPI** backend (`app/api.py`, wire models in
+`app/api_schemas.py`) that drives the ADK 2.x workflow (`AdkSaathi`), so the web UI uses the same safety gate, routing,
+booking tools and tracing as the CLI.
+
+```powershell
+# terminal 1: backend  (http://127.0.0.1:8000, Swagger at /docs)
+.venv\Scripts\activate
+$env:COORDINATOR_TOKEN = "choose-a-secret"      # optional; without it the coordinator console is disabled
+python -m uvicorn app.api:app --host 127.0.0.1 --port 8000
+
+# terminal 2: frontend  (http://127.0.0.1:5173)
+cd frontend
+npm install        # first time only
+npm run dev
+```
+
+Open **http://127.0.0.1:5173**. Coordinator console: **http://127.0.0.1:5173/#/coordinator** (enter the token above).
+Don't use `--reload` on Windows if you hit `WinError 10013`.
+
+| Variable | Where | Purpose |
+|---|---|---|
+| `VITE_API_URL` | `frontend/.env` | backend URL (default `http://127.0.0.1:8000`). Never put secrets in `VITE_*` vars |
+| `FRONTEND_ORIGINS` | backend | CORS allow-list (default `http://localhost:5173,http://127.0.0.1:5173`) |
+| `COORDINATOR_TOKEN` | backend | shared secret for approve/reject; unset = endpoints return 503 |
+| `SESSION_TTL_MINUTES`, `MAX_SESSIONS`, `MESSAGES_PER_MINUTE`, `SESSIONS_PER_MINUTE` | backend | expiry and abuse limits (120 / 200 / 30 / 20) |
+
+**Language and intent:** short, misspelled or everyday input is understood by intent ("shugar test", "throid", "bp check",
+"khoon ki jaanch"); deterministic replies follow the member's language (English or Roman-script Hinglish, chosen from
+what they type, see `app/workflow/replies.py`). Members can list and cancel their confirmed bookings (`cancel <booking id>`,
+owner-only, frees the slot). Red-flag detection is exact-match regex with explicit spelling variants
+(`tests/test_red_flag_variants.py`); it deliberately has no fuzzy matching.
+Not covered: Devanagari-script input; UI chrome (buttons, headings) is English only.
+
+**Features:** dashboard, chat with typed message kinds (answer / safety notice / emergency / booking confirmed / handoff),
+suggested prompts, Hinglish, optimistic send with retry, session create/resume/delete, searchable lab catalogue, booking
+stepper with day/time chips, summary + explicit confirm, change time, cancel, booking id from the backend tool, handoff
+status with a coordinator console, mobile layout (tabbed), accessible labels/roles/focus states.
+
+**API** (all under `/api`; interactive docs at `/docs`):
+
+| Endpoint | Auth | Purpose |
+|---|---|---|
+| `GET /health`, `/config`, `/members`, `/packages?q=`, `/programs` | none | status and catalogue (no keys exposed) |
+| `POST /sessions` `{member_id}` | none | create; returns a one-time `session_token` |
+| `GET / DELETE /sessions/{id}` | `Authorization: Bearer <session_token>` | state / delete |
+| `POST /sessions/{id}/messages` `{text}` (1-500 chars) | Bearer | one turn; returns full `SessionView` |
+| `GET /coordinator/approvals`, `POST /coordinator/approvals/{id}` `{approved, note}` | `X-Coordinator-Token` | list / decide handed-off bookings |
+
+**Security model and limits (local demo, not deployable as is):** per-session bearer token; a member's token can never
+approve its own booking; coordinator access is ONE shared secret (no per-person identity, no audit trail of who
+approved); sessions and raw transcripts are in process memory (idle expiry, caps, rate limits, lost on restart);
+no TLS, no user login; the `session_token` is kept in the tab's `sessionStorage`. Without an LLM key, wellness answers are
+`[MOCK]` and the UI says so.
+
+## Evaluations
+
+```powershell
+python -m pytest tests -q                 # backend incl. tests/test_api.py (auth, isolation, booking, safety, handoff)
+cd frontend; npm run typecheck; npm test  # TypeScript + vitest unit tests
+cd frontend; npx playwright test          # 15 browser tests (system Edge) against real backends on :8000/:8001
+```
+
+The Playwright run starts its own backends (one with lab outages forced on to exercise the coordinator handoff) and
+saves screenshots to `frontend/e2e/screenshots/`.
+
 
 ```bash
 python -m pytest tests -q                 # hermetic: API keys are blanked, no network
