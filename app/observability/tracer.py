@@ -153,12 +153,43 @@ def _write(record: dict) -> None:
         logger.error("Failed to write trace: %s", e)
 
 
+def capture_content() -> bool:
+    """LANGFUSE_CAPTURE_CONTENT=true sends raw prompts/replies/queries to the trace. Default: redacted (health data)."""
+    return os.environ.get("LANGFUSE_CAPTURE_CONTENT", "").strip().lower() in ("1", "true", "yes")
+
+
+_FREE_TEXT_KEYS = frozenset({"query", "reply", "text", "prompt", "user_text", "response", "note", "target_symptom"})
+
+
+def _mask(value: Any, free_text: bool = True) -> Any:
+    """Span input/output as it may leave the process. Raw only when capture is explicitly on; otherwise free text
+    (a bare string, or a dict value under a _FREE_TEXT_KEYS key) is redacted and structured ids/slots/dates pass."""
+    if value is None or capture_content():
+        return value
+    if isinstance(value, str):
+        if not free_text:
+            return value
+        from app.observability.redact import redact
+        return redact(value)
+    if isinstance(value, dict):
+        return {k: _mask(v, k in _FREE_TEXT_KEYS) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_mask(v, free_text) for v in value]
+    return value if isinstance(value, (int, float, bool)) else str(value)
+
+
 class Span:
     def __init__(self, record: dict):
         self.record = record
 
     def set(self, **meta) -> None:
         self.record["metadata"].update(meta)
+
+    def set_input(self, value: Any) -> None:
+        self.record["input"] = _mask(value)
+
+    def set_output(self, value: Any) -> None:
+        self.record["output"] = _mask(value)
 
 
 def _plain(meta: dict) -> dict:
@@ -169,15 +200,32 @@ def _plain(meta: dict) -> dict:
 _AS_TYPE = {"llm": "generation", "tool": "tool"}
 
 
+def _trace_attributes(name: str, md: dict) -> Any:
+    """propagate_attributes(...) context manager: user (pseudonymous member_id), session, version, tags, trace name."""
+    from langfuse import propagate_attributes
+    tags = ["saathi"] + [f"{k}:{md[k]}" for k in ("channel", "engine") if md.get(k)]
+    return propagate_attributes(
+        user_id=str(md["member_id"]) if md.get("member_id") else None,
+        session_id=str(md["session_id"]) if md.get("session_id") else None,
+        version=str(md["prompt_version"]) if md.get("prompt_version") else None,
+        tags=tags, trace_name=name,
+        metadata={k: str(md[k]) for k in ("channel", "engine", "prompt_version") if md.get(k)})
+
+
 @contextmanager
-def span(name: str, trace_id: str, kind: str = "node", **metadata) -> Iterator[Span]:
-    """Wrap a node / tool / LLM call. kind in {root, node, tool, llm}."""
+def span(name: str, trace_id: str, kind: str = "node", input: Any = None, **metadata) -> Iterator[Span]:
+    """Wrap a node / tool / LLM call. kind in {root, node, tool, llm}.
+
+    `input` / Span.set_input / Span.set_output fill Langfuse's Input/Output panes (redacted unless
+    LANGFUSE_CAPTURE_CONTENT=true). A root span also sets the trace-level user, session, tags, version and I/O."""
     rec = {"trace_id": trace_id, "span_id": uuid.uuid4().hex[:16], "name": name,
            "kind": kind, "start": time.time(), "metadata": dict(metadata)}
     s = Span(rec)
+    if input is not None:
+        s.set_input(input)
     t0 = time.perf_counter()
 
-    lf_cm, lf_obs, lf_token = None, None, None
+    lf_cm, lf_obs, lf_token, lf_attrs = None, None, None, None
     if _langfuse is not None:
         try:
             kw: dict = {"name": name, "as_type": _AS_TYPE.get(kind, "span"), "metadata": _plain({"kind": kind, **metadata})}
@@ -188,9 +236,15 @@ def span(name: str, trace_id: str, kind: str = "node", **metadata) -> Iterator[S
             lf_cm = _langfuse.start_as_current_observation(**kw)
             lf_obs = lf_cm.__enter__()
             lf_token = _lf_active.set(True)
+            if kind == "root":  # trace-level attributes, propagated to every child observation
+                lf_attrs = _trace_attributes(name, metadata)
+                if lf_attrs is not None:
+                    lf_attrs.__enter__()
         except Exception as e:
             rec["langfuse_error"] = _lf_fail(f"start span '{name}'", e)
-            lf_cm = lf_obs = None
+            if lf_token is not None:
+                _lf_active.reset(lf_token)
+            lf_cm = lf_obs = lf_token = lf_attrs = None
     try:
         yield s
         rec["status"] = "ok"
@@ -204,6 +258,10 @@ def span(name: str, trace_id: str, kind: str = "node", **metadata) -> Iterator[S
             try:
                 md = rec["metadata"]
                 upd: dict = {"metadata": _plain({"kind": kind, "latency_ms": rec["latency_ms"], **md})}
+                if rec.get("input") is not None:
+                    upd["input"] = rec["input"]
+                if rec.get("output") is not None:
+                    upd["output"] = rec["output"]
                 if kind == "llm":
                     if md.get("prompt_tokens") is not None or md.get("completion_tokens") is not None:
                         upd["usage_details"] = {"input": md.get("prompt_tokens", 0), "output": md.get("completion_tokens", 0)}
@@ -212,15 +270,19 @@ def span(name: str, trace_id: str, kind: str = "node", **metadata) -> Iterator[S
                 if rec["status"] == "error":
                     upd["level"], upd["status_message"] = "ERROR", rec.get("error", "")
                 lf_obs.update(**upd)
+                if kind == "root" and (rec.get("input") is not None or rec.get("output") is not None):
+                    lf_obs.set_trace_io(input=rec.get("input"), output=rec.get("output"))
             except Exception as e:
                 rec["langfuse_error"] = _lf_fail(f"update span '{name}'", e)
             try:
+                if lf_attrs is not None:
+                    lf_attrs.__exit__(None, None, None)
                 lf_cm.__exit__(None, None, None)
             except Exception as e:
                 rec["langfuse_error"] = _lf_fail(f"end span '{name}'", e)
             finally:
                 if lf_token is not None:
-                    _lf_active.set(False)
+                    _lf_active.reset(lf_token)
         _write(rec)
 
 

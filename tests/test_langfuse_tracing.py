@@ -248,3 +248,30 @@ def test_env_built_client_with_bad_keys_is_switched_off(monkeypatch):
     tr.init_langfuse()
     st = tr.tracing_status()
     assert not st.langfuse_enabled and st.auth_verified is False
+
+
+# ---------- input/output, trace-level attributes, redaction ----------
+def test_io_and_trace_attributes_reach_langfuse_and_text_is_redacted(monkeypatch):
+    monkeypatch.delenv("LANGFUSE_CAPTURE_CONTENT", raising=False)
+    client, exp = _real_client()
+    tr.init_langfuse(client)
+    tid = tr.new_trace_id()
+    with tr.span("turn", tid, kind="root", member_id="M1", session_id="S1", channel="chat", prompt_version="v4",
+                 input="I have chest pain") as root:
+        with tr.span("tool:check_slots", tid, kind="tool", input={"package_id": "LP_1", "query": "secret"}) as t:
+            t.set_output({"free_slots": ["09:30 AM"]})
+        with tr.span("tool:other", tid, kind="tool"):   # sibling must still nest under the root
+            pass
+        root.set_output("Please call emergency services")
+    tr.flush()
+    spans = {s.name: s for s in exp.get_finished_spans()}
+    a = spans["turn"].attributes
+    assert a["user.id"] == "M1" and a["session.id"] == "S1" and a["langfuse.version"] == "v4"
+    assert "saathi" in a["langfuse.trace.tags"] and "channel:chat" in a["langfuse.trace.tags"]
+    assert "chest pain" not in json.dumps(dict(a)) and "<redacted" in a["langfuse.observation.input"]
+    tool = spans["tool:check_slots"].attributes
+    assert "LP_1" in tool["langfuse.observation.input"] and "secret" not in tool["langfuse.observation.input"]
+    assert "09:30 AM" in tool["langfuse.observation.output"]
+    root_id = spans["turn"].context.span_id
+    assert spans["tool:other"].parent.span_id == root_id and spans["tool:check_slots"].parent.span_id == root_id
+    client.shutdown()
