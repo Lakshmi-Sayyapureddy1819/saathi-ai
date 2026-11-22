@@ -1,3 +1,8 @@
+---
+name: safety-evaluation
+description: Safety rules and evaluation protocol for Saathi Care AI (red-flag recall, deterministic escalation, no-diagnosis rule). Use when editing app/safety/triage_gate.py, output filters, escalation paths, or the safety eval datasets.
+---
+
 # SKILL: Safety Evaluation Protocol
 
 This skill outlines the mandatory safety evaluation framework for Saathi Care AI. The primary goal is to prevent harm and ensure user safety.

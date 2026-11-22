@@ -1,6 +1,11 @@
+---
+name: adk-workflow
+description: Build and change the Saathi Care AI multi-turn workflow on Google ADK 2.x (graph nodes, state transitions, the code-vs-LLM boundary). Use when editing app/workflow/ (graph.py, adk_graph.py, state.py) or adding a node, edge or human-approval step.
+---
+
 # SKILL: ADK 2.0 Workflow Engineering
 
-This skill defines the architectural pattern for building and managing complex, multi-turn workflows using the Agent Development Kit (ADK) 2.0.
+This skill defines the architectural pattern for building and managing complex, multi-turn workflows using the Agent Development Kit (ADK) 2.x (pinned `google-adk~=2.11.0`).
 
 ## 1. DAGs as the Source of Truth
 - All workflows are defined as Directed Acyclic Graphs (DAGs).
@@ -8,7 +13,7 @@ This skill defines the architectural pattern for building and managing complex, 
 - Edges represent valid state transitions.
 
 ## 2. State Transitions
-- State is managed centrally in the \UserSessionState\ Pydantic model.
+- State is managed centrally in the `UserSessionState` Pydantic model (`app/workflow/state.py`).
 - A transition from one node to another is a pure function that takes the current state and returns a new state.
 - Side effects (e.g., API calls, database writes) are managed by tools, not within the state transition logic itself.
 
@@ -23,3 +28,7 @@ This skill defines the architectural pattern for building and managing complex, 
   - Natural Language Generation (NLG) to formulate responses.
   - Summarization of complex histories.
   - Non-critical recommendations or suggestions.
+
+## 4. Working rules
+- Check ADK APIs against the installed package source, not memory.
+- `adk_graph.py` wraps the same node logic as `graph.py`; do not duplicate node logic.
