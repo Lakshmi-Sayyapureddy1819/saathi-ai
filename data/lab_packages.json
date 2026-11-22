@@ -1,0 +1,169 @@
+[
+    {
+        "package_id": "LP_001",
+        "name": "Comprehensive Full Body Blood Checkup",
+        "test_count": 85,
+        "fasting_required": true,
+        "fasting_hours": 12,
+        "price_inr": 2999,
+        "target_symptoms": [
+            "General fatigue",
+            "Unexplained weight changes",
+            "Frequent illness",
+            "Overall health assessment"
+        ]
+    },
+    {
+        "package_id": "LP_002",
+        "name": "Thyroid Screening Profile",
+        "test_count": 3,
+        "fasting_required": false,
+        "fasting_hours": 0,
+        "price_inr": 599,
+        "target_symptoms": [
+            "Weight gain/loss",
+            "Hair fall",
+            "Mood swings",
+            "Lethargy"
+        ]
+    },
+    {
+        "package_id": "LP_003",
+        "name": "Advanced Diabetic Profile",
+        "test_count": 10,
+        "fasting_required": true,
+        "fasting_hours": 10,
+        "price_inr": 1299,
+        "target_symptoms": [
+            "Frequent urination",
+            "Excessive thirst",
+            "Blurry vision",
+            "Tingling in hands/feet"
+        ]
+    },
+    {
+        "package_id": "LP_004",
+        "name": "Cardiac Risk Assessment",
+        "test_count": 12,
+        "fasting_required": true,
+        "fasting_hours": 12,
+        "price_inr": 2499,
+        "target_symptoms": [
+            "Chest pain",
+            "Shortness of breath",
+            "High blood pressure",
+            "Family history of heart disease"
+        ]
+    },
+    {
+        "package_id": "LP_005",
+        "name": "Vitamin D & B12 Panel",
+        "test_count": 2,
+        "fasting_required": false,
+        "fasting_hours": 0,
+        "price_inr": 799,
+        "target_symptoms": [
+            "Bone and joint pain",
+            "Constant fatigue",
+            "Mood swings",
+            "Forgetfulness"
+        ]
+    },
+    {
+        "package_id": "LP_006",
+        "name": "Senior Citizen Vitality (Male)",
+        "test_count": 70,
+        "fasting_required": true,
+        "fasting_hours": 10,
+        "price_inr": 3499,
+        "target_symptoms": [
+            "Age-related weakness",
+            "Prostate issues",
+            "Memory decline",
+            "Reduced mobility"
+        ]
+    },
+    {
+        "package_id": "LP_007",
+        "name": "Senior Citizen Vitality (Female)",
+        "test_count": 72,
+        "fasting_required": true,
+        "fasting_hours": 10,
+        "price_inr": 3599,
+        "target_symptoms": [
+            "Post-menopausal issues",
+            "Bone density concerns",
+            "Hormonal changes",
+            "General weakness"
+        ]
+    },
+    {
+        "package_id": "LP_008",
+        "name": "Liver & Kidney Function Panel",
+        "test_count": 25,
+        "fasting_required": false,
+        "fasting_hours": 0,
+        "price_inr": 1499,
+        "target_symptoms": [
+            "Jaundice",
+            "Swelling in legs",
+            "Changes in urine color",
+            "Loss of appetite"
+        ]
+    },
+    {
+        "package_id": "LP_009",
+        "name": "Womens Wellness Package",
+        "test_count": 60,
+        "fasting_required": true,
+        "fasting_hours": 10,
+        "price_inr": 1999,
+        "target_symptoms": [
+            "Irregular periods",
+            "PCOD/PCOS symptoms",
+            "Hormonal imbalance",
+            "General wellness"
+        ]
+    },
+    {
+        "package_id": "LP_010",
+        "name": "Mens Health Prime",
+        "test_count": 55,
+        "fasting_required": false,
+        "fasting_hours": 0,
+        "price_inr": 1899,
+        "target_symptoms": [
+            "Low energy",
+            "Reduced stamina",
+            "Concerns about testosterone levels",
+            "Overall vitality"
+        ]
+    },
+    {
+        "package_id": "LP_011",
+        "name": "Fever & Infection Panel",
+        "test_count": 90,
+        "fasting_required": false,
+        "fasting_hours": 0,
+        "price_inr": 1799,
+        "target_symptoms": [
+            "High fever",
+            "Chills",
+            "Body aches",
+            "Suspected dengue/malaria/typhoid"
+        ]
+    },
+    {
+        "package_id": "LP_012",
+        "name": "Pre-Wedding Health Screen",
+        "test_count": 65,
+        "fasting_required": true,
+        "fasting_hours": 12,
+        "price_inr": 4999,
+        "target_symptoms": [
+            "General health assessment before marriage",
+            "Checking for common deficiencies",
+            "Assessing reproductive health"
+        ]
+    }
+]

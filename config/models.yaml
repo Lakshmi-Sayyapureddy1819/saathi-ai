@@ -1,0 +1,25 @@
+# Declarative Model Routing for Saathi Care AI
+
+providers:
+  - name: gemini
+    models:
+      - id: gemini-2.5-flash
+      - id: gemini-3.1-pro
+  - name: openai
+    models:
+      - id: gpt-4o-mini
+      - id: gpt-4o
+
+routing:
+  nodes:
+    # Low-latency, low-cost tasks like simple intent extraction
+    - name: cost_optimized
+      description: "Optimized for speed and cost. Suitable for simple NLU and routing tasks."
+      default_model: gemini-2.5-flash
+      fallback_model: gpt-4o-mini
+
+    # High-stakes, complex tasks requiring maximum reasoning
+    - name: quality_optimized
+      description: "Optimized for reasoning and quality. Used for complex summarization and final response generation."
+      default_model: gemini-2.5-pro
+      fallback_model: gpt-4o

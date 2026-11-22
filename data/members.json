@@ -1,0 +1,92 @@
+[
+    {
+        "member_id": "MEM_1001",
+        "name": "Aarav Sharma",
+        "age": 34,
+        "language_preference": "hinglish",
+        "enrolled_programs": [
+            "PROG_P_001",
+            "PROG_D_001"
+        ],
+        "past_bookings": [
+            "LP_001",
+            "LP_005"
+        ],
+        "health_goals": [
+            "Reduce stress",
+            "Improve sleep quality",
+            "Check vitamin levels"
+        ]
+    },
+    {
+        "member_id": "MEM_1002",
+        "name": "Priya Patel",
+        "age": 28,
+        "language_preference": "english",
+        "enrolled_programs": [
+            "PROG_Y_001",
+            "PROG_Y_002",
+            "PROG_D_003"
+        ],
+        "past_bookings": [
+            "LP_009"
+        ],
+        "health_goals": [
+            "Lose 5 kgs",
+            "Increase flexibility",
+            "Eat healthier"
+        ]
+    },
+    {
+        "member_id": "MEM_1003",
+        "name": "Rohan Das",
+        "age": 45,
+        "language_preference": "hindi",
+        "enrolled_programs": [
+            "PROG_P_002",
+            "PROG_D_004"
+        ],
+        "past_bookings": [
+            "LP_003",
+            "LP_004",
+            "LP_008"
+        ],
+        "health_goals": [
+            "Manage blood sugar",
+            "Improve heart health",
+            "Reduce cholesterol"
+        ]
+    },
+    {
+        "member_id": "MEM_1004",
+        "name": "Sunita Gupta",
+        "age": 62,
+        "language_preference": "hinglish",
+        "enrolled_programs": [
+            "PROG_Y_005",
+            "PROG_I_001"
+        ],
+        "past_bookings": [
+            "LP_007"
+        ],
+        "health_goals": [
+            "Manage joint pain",
+            "Improve bone density",
+            "Stay active"
+        ]
+    },
+    {
+        "member_id": "MEM_1005",
+        "name": "Vikram Singh",
+        "age": 29,
+        "language_preference": "english",
+        "enrolled_programs": [],
+        "past_bookings": [
+            "LP_012"
+        ],
+        "health_goals": [
+            "General fitness checkup",
+            "Build muscle mass"
+        ]
+    }
+]
