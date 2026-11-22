@@ -13,9 +13,9 @@ import app.observability.tracer as tr
 
 @pytest.fixture(autouse=True)
 def _restore_tracer():
-    saved = (tr._langfuse, tr._lf_errors, tr._lf_last_error, tr._lf_init_note)
+    saved = (tr._langfuse, tr._lf_errors, tr._lf_last_error, tr._lf_init_note, tr._lf_auth_verified)
     yield
-    tr._langfuse, tr._lf_errors, tr._lf_last_error, tr._lf_init_note = saved
+    tr._langfuse, tr._lf_errors, tr._lf_last_error, tr._lf_init_note, tr._lf_auth_verified = saved
 
 
 def _local_records(trace_id):
@@ -170,3 +170,81 @@ def test_init_failure_is_reported_not_hidden(monkeypatch, caplog):
     st = tr.tracing_status()
     assert not st.langfuse_enabled and "bad config" in st.note
     assert any("bad config" in r.message for r in caplog.records)
+
+
+# ---------- credential check at initialisation ----------
+class _AuthClient:
+    def __init__(self, exc=None):
+        self.exc, self.shutdown_called = exc, False
+
+    def auth_check(self):
+        if self.exc:
+            raise self.exc
+        return True
+
+    def shutdown(self):
+        self.shutdown_called = True
+
+
+class _Http401(Exception):
+    status_code = 401
+
+
+def test_valid_credentials_are_verified_and_langfuse_stays_on():
+    tr.init_langfuse(_AuthClient(), check_auth=True)
+    st = tr.tracing_status()
+    assert st.langfuse_enabled and st.auth_verified is True and st.langfuse_errors == 0
+
+
+def test_rejected_credentials_turn_langfuse_off_with_a_clear_reason(caplog):
+    c = _AuthClient(_Http401("Unauthorized"))
+    with caplog.at_level(logging.WARNING):
+        tr.init_langfuse(c, check_auth=True)
+    st = tr.tracing_status()
+    assert not st.langfuse_enabled and st.auth_verified is False and c.shutdown_called
+    assert "REJECTED" in st.note and "pk-lf-" in st.note and "Unauthorized" in (st.last_langfuse_error or "")
+    assert any("REJECTED" in r.message for r in caplog.records)
+    tid = tr.new_trace_id()
+    with tr.span("still_traced_locally", tid):                       # local tracing is unaffected
+        pass
+    assert _local_records(tid)[0]["status"] == "ok"
+
+
+def test_real_sdk_unauthorized_error_is_recognised_as_rejected():
+    from langfuse.api import UnauthorizedError
+    assert tr._credentials_rejected(UnauthorizedError(body={}))
+
+
+def test_unreachable_langfuse_is_unverified_not_rejected():
+    tr.init_langfuse(_AuthClient(ConnectionError("network down")), check_auth=True)
+    st = tr.tracing_status()
+    assert st.langfuse_enabled and st.auth_verified is None and "could not be verified" in st.note
+
+
+def test_injected_clients_are_not_checked_by_default():
+    tr.init_langfuse(_AuthClient(_Http401("would fail")))           # tests inject fakes: no network, no check
+    st = tr.tracing_status()
+    assert st.langfuse_enabled and st.auth_verified is None
+
+
+def test_auth_check_can_be_skipped_for_env_built_clients(monkeypatch):
+    import langfuse
+    built = []
+    monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk-lf-x")
+    monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk-lf-x")
+    monkeypatch.setenv("LANGFUSE_AUTH_CHECK", "0")
+    monkeypatch.setattr(langfuse, "Langfuse", lambda *a, **k: built.append(1) or _AuthClient(_Http401("x")))
+    tr.init_langfuse()
+    st = tr.tracing_status()
+    assert built and st.langfuse_enabled and st.auth_verified is None
+
+
+def test_env_built_client_with_bad_keys_is_switched_off(monkeypatch):
+    import langfuse
+    monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk-lf-x")
+    monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk-lf-x")
+    monkeypatch.delenv("LANGFUSE_AUTH_CHECK", raising=False)
+    monkeypatch.setattr(langfuse, "Langfuse", lambda *a, **k: _AuthClient(_Http401("nope")))
+    tr.init_langfuse()
+    st = tr.tracing_status()
+    assert not st.langfuse_enabled and st.auth_verified is False

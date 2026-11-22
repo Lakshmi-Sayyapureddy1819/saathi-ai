@@ -28,6 +28,7 @@ _langfuse: Any = None                      # a langfuse.Langfuse client, or None
 _lf_errors = 0
 _lf_last_error: Optional[str] = None
 _lf_init_note: str = "not initialised"
+_lf_auth_verified: Optional[bool] = None
 _lf_active: "contextvars.ContextVar[bool]" = contextvars.ContextVar("lf_active", default=False)
 
 
@@ -37,11 +38,12 @@ class TracingStatus(BaseModel):
     langfuse_errors: int
     last_langfuse_error: Optional[str]
     note: str
+    auth_verified: Optional[bool] = None  # True: keys accepted; False: rejected (Langfuse turned off); None: not checked / unreachable
 
 
 def tracing_status() -> TracingStatus:
     return TracingStatus(langfuse_enabled=_langfuse is not None, langfuse_errors=_lf_errors,
-                         last_langfuse_error=_lf_last_error, note=_lf_init_note)
+                         last_langfuse_error=_lf_last_error, note=_lf_init_note, auth_verified=_lf_auth_verified)
 
 
 def _lf_fail(stage: str, exc: BaseException) -> str:
@@ -57,23 +59,81 @@ def _lf_fail(stage: str, exc: BaseException) -> str:
     return msg
 
 
-def init_langfuse(client: Any = None) -> None:
-    """(Re)initialise the Langfuse backend. Pass `client` to inject one (tests); otherwise build from env."""
-    global _langfuse, _lf_init_note
-    if client is not None:
-        _langfuse, _lf_init_note = client, "injected client"
-        return
-    if not (os.environ.get("LANGFUSE_PUBLIC_KEY") and os.environ.get("LANGFUSE_SECRET_KEY")):
-        _langfuse, _lf_init_note = None, "disabled: LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY not set (local tracing only)"
-        logger.info("Langfuse %s", _lf_init_note)
-        return
+def _credentials_rejected(exc: BaseException) -> bool:
+    """401/403 from Langfuse (or its 'no projects for these credentials' error) means the keys are wrong."""
+    code = getattr(exc, "status_code", None)
+    return code in (401, 403) or type(exc).__name__ in ("UnauthorizedError", "AccessDeniedError") or "No projects" in str(exc)
+
+
+class _Short(Exception):
+    """Compact view of an SDK API error: HTTP status + the service's own message, without the header dump."""
+    def __init__(self, exc: BaseException):
+        body = getattr(exc, "body", None)
+        msg = body.get("message") if isinstance(body, dict) else None
+        status = getattr(exc, "status_code", None)
+        detail = msg or str(exc)[:200]
+        super().__init__(f"HTTP {status}: {detail}" if status else detail)
+        self.__class__ = type(type(exc).__name__, (Exception,), {})  # keep the original class name in the log line
+
+
+def verify_credentials(client: Any) -> Optional[bool]:
+    """Blocking, bounded credential check (the SDK's own timeout applies). Returns True / False, or None when it
+    could not be decided (network down, Langfuse unreachable): an outage is not evidence of bad keys."""
+    global _lf_auth_verified
     try:
-        from langfuse import Langfuse
-        _langfuse = Langfuse()  # reads LANGFUSE_PUBLIC_KEY / SECRET_KEY / HOST|BASE_URL from the environment
-        _lf_init_note = "enabled"
-    except Exception as e:  # SDK missing or incompatible: say so loudly, keep local tracing
+        client.auth_check()
+        _lf_auth_verified = True
+    except Exception as e:  # noqa: BLE001
+        if _credentials_rejected(e):
+            _lf_auth_verified = False
+            _lf_fail("credential check (keys rejected)", _Short(e))
+        else:
+            _lf_auth_verified = None
+            _lf_fail("credential check (could not reach Langfuse; keys unverified)", e)
+    return _lf_auth_verified
+
+
+def init_langfuse(client: Any = None, check_auth: Optional[bool] = None) -> None:
+    """(Re)initialise the Langfuse backend. Pass `client` to inject one (tests); otherwise build from env.
+
+    The credential check runs for env-built clients (skip with LANGFUSE_AUTH_CHECK=0) and for injected ones only when
+    check_auth=True. Rejected keys switch Langfuse OFF with a clear reason, instead of letting every span export fail
+    in the background (the SDK exports asynchronously, so a 401 would otherwise only reach the log)."""
+    global _langfuse, _lf_init_note, _lf_auth_verified
+    _lf_auth_verified = None
+    if client is None:
+        if not (os.environ.get("LANGFUSE_PUBLIC_KEY") and os.environ.get("LANGFUSE_SECRET_KEY")):
+            _langfuse, _lf_init_note = None, "disabled: LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY not set (local tracing only)"
+            logger.info("Langfuse %s", _lf_init_note)
+            return
+        try:
+            from langfuse import Langfuse
+            client = Langfuse()  # reads LANGFUSE_PUBLIC_KEY / SECRET_KEY / HOST|BASE_URL from the environment
+        except Exception as e:  # SDK missing or incompatible: say so loudly, keep local tracing
+            _langfuse = None
+            _lf_init_note = f"disabled: could not initialise Langfuse ({_lf_fail('init', e)})"
+            logger.warning("Langfuse %s", _lf_init_note)
+            return
+        do_check = check_auth if check_auth is not None else os.environ.get("LANGFUSE_AUTH_CHECK", "1") != "0"
+        note_ok = "enabled"
+    else:
+        do_check = bool(check_auth)
+        note_ok = "injected client"
+    _langfuse, _lf_init_note = client, note_ok
+    if not do_check:
+        return
+    result = verify_credentials(client)
+    if result is False:
+        try:
+            client.shutdown()  # stop the background exporter so it does not keep failing
+        except Exception as e:  # noqa: BLE001
+            _lf_fail("shutdown after rejected credentials", e)
         _langfuse = None
-        _lf_init_note = f"disabled: could not initialise Langfuse ({_lf_fail('init', e)})"
+        _lf_init_note = ("disabled: Langfuse REJECTED the credentials (401). Check LANGFUSE_PUBLIC_KEY (pk-lf-...), "
+                         "LANGFUSE_SECRET_KEY (sk-lf-...) and LANGFUSE_HOST / region. Local tracing continues.")
+        logger.warning("Langfuse %s", _lf_init_note)
+    elif result is None:
+        _lf_init_note = "enabled, but credentials could not be verified (Langfuse unreachable); spans may be dropped"
         logger.warning("Langfuse %s", _lf_init_note)
 
 
