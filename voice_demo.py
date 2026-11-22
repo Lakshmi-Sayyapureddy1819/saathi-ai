@@ -37,3 +37,31 @@ def run_demo():
 
 if __name__ == "__main__":
     run_demo()
+
+
+def run_outbound_demo(member_id: str = "MEM_1001") -> None:
+    """Outbound reminder call: the agent phones a member about a pending checkup and books it."""
+    import json
+    from app.channels.outbound import OutboundCall
+
+    print("--- Saathi Care AI: Outbound Reminder Call Demo ---")
+    src = next(m for m in json.load(open("data/members.json", encoding="utf-8")) if m["member_id"] == member_id)
+    member = MemberProfile(member_id=src["member_id"], name=src["name"], age=src["age"],
+                           language_pref=src["language_preference"], past_bookings=src["past_bookings"],
+                           pending_checkups=src["pending_checkups"])
+    before = list(member.past_bookings)
+    call = OutboundCall(member)
+    call.start()
+    for utterance in ["haan kar do", "kal subah", "09:00 AM", "yes confirm"]:
+        if call.finished:
+            break
+        print(f"\nMember (Audio): {utterance}")
+        call.reply(utterance)
+    res = call.result(before)
+    print(f"\nOutcome: {res.outcome}  bookings: {res.booking_ids}  trace_id: {res.trace_id}")
+
+
+if __name__ == "__main__":
+    import sys
+    if "--outbound" in sys.argv:
+        run_outbound_demo()

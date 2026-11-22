@@ -37,7 +37,7 @@ class VoiceTurnMetrics(BaseModel):
 
 
 class VoiceAgent:
-    def __init__(self, tts_char_delay: float = 0.02, graph: Optional["WorkflowGraph"] = None, verbose: bool = True):
+    def __init__(self, tts_char_delay: float = 0.002, graph: Optional["WorkflowGraph"] = None, verbose: bool = True):
         self.tts_char_delay = tts_char_delay
         self.graph = graph          # reuse one workflow across turns (None: a fresh one per turn, as before)
         self.verbose = verbose
@@ -51,7 +51,11 @@ class VoiceAgent:
 
     @staticmethod
     def normalize(text: str) -> str:
-        return " ".join(HINGLISH.get(w, w) for w in text.lower().split())
+        import re
+        def _rep(m):
+            w = m.group(0).lower()
+            return HINGLISH.get(w, m.group(0))
+        return re.sub(r"\b[A-Za-z]+\b", _rep, text)
 
     def transcribe(self, audio_or_text: str) -> str:
         time.sleep(0.05)  # placeholder for real STT latency
@@ -92,13 +96,14 @@ class VoiceAgent:
                 return "Sorry, I didn't catch a valid time."
         return None
 
-    def process_voice_turn(self, user_audio_transcript: str, session: UserSessionState) -> UserSessionState:
+    def process_voice_turn(self, user_audio_transcript: str, session: UserSessionState,
+                           trace_id: Optional[str] = None) -> UserSessionState:
         t0 = time.perf_counter()
         transcript = self.transcribe(user_audio_transcript)
         t1 = time.perf_counter()
         if self.verbose:
             print(f"[ASR]: {transcript}")
-        response, session = execute_turn(transcript, session, graph=self.graph)
+        response, session = execute_turn(transcript, session, trace_id=trace_id, graph=self.graph)
         t2 = time.perf_counter()
         first_ms, barged = self.speak(response)
         t3 = time.perf_counter()

@@ -16,6 +16,14 @@ NodeName = Literal[
 TriageLevel = Literal["GREEN_NORMAL", "YELLOW_WARNING", "RED_CRISIS"]
 
 
+class PendingCheckup(BaseModel):
+    """A lab checkup the member is due for but has not booked yet (drives the outbound reminder call)."""
+    model_config = ConfigDict(frozen=True)
+    package_id: str
+    due_date: date
+    reason: str = ""
+
+
 class MemberProfile(BaseModel):
     """Static profile of a member."""
     member_id: str
@@ -25,6 +33,7 @@ class MemberProfile(BaseModel):
     enrolled_programs: List[str] = Field(default_factory=list)
     past_bookings: List[str] = Field(default_factory=list)
     health_goals: List[str] = Field(default_factory=list)
+    pending_checkups: List[PendingCheckup] = Field(default_factory=list)
 
 
 class BookingDraft(BaseModel):

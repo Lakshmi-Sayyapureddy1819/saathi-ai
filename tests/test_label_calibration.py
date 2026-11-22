@@ -1,7 +1,6 @@
 """The labelling tool records exactly what is typed, is resumable, and never shows or calls the judge.
 (Scripted answers here exercise the tool; they are not calibration labels.)"""
 import json
-import shutil
 from pathlib import Path
 
 from evaluations import label_calibration as lc
@@ -9,8 +8,12 @@ from evaluations.run_evals import judge_agreement
 
 
 def _copy_labels(tmp_path: Path) -> Path:
+    """A blank template with the real case ids, so the tests do not depend on the real (hand-labelled) file."""
+    real = json.loads(Path(lc.LABEL_FILE).read_text(encoding="utf-8"))
+    blank = {"_instructions": real.get("_instructions", ""),
+             "labels": {cid: {"annotator_a": None, "annotator_b": None} for cid in real["labels"]}}
     p = tmp_path / "labels.json"
-    shutil.copy(lc.LABEL_FILE, p)
+    p.write_text(json.dumps(blank), encoding="utf-8")
     return p
 
 

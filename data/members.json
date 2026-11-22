@@ -16,6 +16,13 @@
             "Reduce stress",
             "Improve sleep quality",
             "Check vitamin levels"
+        ],
+        "pending_checkups": [
+            {
+                "package_id": "LP_002",
+                "due_date": "2026-12-05",
+                "reason": "Follow-up thyroid screening after your tiredness goal"
+            }
         ]
     },
     {
@@ -35,6 +42,13 @@
             "Lose 5 kgs",
             "Increase flexibility",
             "Eat healthier"
+        ],
+        "pending_checkups": [
+            {
+                "package_id": "LP_005",
+                "due_date": "2026-12-10",
+                "reason": "Annual vitamin check"
+            }
         ]
     },
     {
@@ -55,7 +69,8 @@
             "Manage blood sugar",
             "Improve heart health",
             "Reduce cholesterol"
-        ]
+        ],
+        "pending_checkups": []
     },
     {
         "member_id": "MEM_1004",
@@ -73,7 +88,8 @@
             "Manage joint pain",
             "Improve bone density",
             "Stay active"
-        ]
+        ],
+        "pending_checkups": []
     },
     {
         "member_id": "MEM_1005",
@@ -87,6 +103,13 @@
         "health_goals": [
             "General fitness checkup",
             "Build muscle mass"
+        ],
+        "pending_checkups": [
+            {
+                "package_id": "LP_004",
+                "due_date": "2026-12-01",
+                "reason": "Six-month cardiac risk review"
+            }
         ]
     }
 ]
