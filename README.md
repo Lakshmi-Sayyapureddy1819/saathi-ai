@@ -106,9 +106,18 @@ with model, token usage and cost, and our `trace_id` is used as the Langfuse tra
 
 - Langfuse problems never break a turn, but they are never silent: each failure is counted, logged, kept in
   `app.observability.tracer.tracing_status()` and written to the affected local span as `langfuse_error`.
-- **Verification status:** tested against the real Langfuse 4.15.6 SDK *offline* (in-memory OpenTelemetry exporter:
-  nesting, trace id, generation model/usage/cost, error level). It has **not** been verified against a live Langfuse
-  project, because no Langfuse credentials were available. Check the first real trace in the Langfuse UI.
+- **Credentials are checked at startup.** The SDK exports spans in the background, so wrong keys would otherwise only
+  show up as `Failed to export span batch ... 401` log lines. When the keys are rejected, Langfuse is switched off
+  with an actionable warning (`tracing_status().auth_verified` is `False`) and local tracing continues; an unreachable
+  Langfuse is reported as unverified instead. Set `LANGFUSE_AUTH_CHECK=0` to skip the check. Set `LANGFUSE_HOST` to your
+  project's region (for example `https://us.cloud.langfuse.com`): keys from one region are rejected by the others.
+- **Verification status:**
+  - *Offline:* the real Langfuse 4.15.6 SDK with an in-memory OpenTelemetry exporter (nesting, trace id, generation
+    model/usage/cost, error level, credential check).
+  - *Live (2026-11-22, US region):* credentials accepted by the startup check, and a booking turn's spans were read
+    back from Langfuse's API (`turn`, `node_safety_gate`, `node_intent_router`, `node_lab_booking`, `tool:book_test`).
+  - *Not yet verified live:* LLM *generation* spans (model, token usage, cost), which need a turn that calls the LLM,
+    and how traces look in the Langfuse UI (checked through the API only).
 
 ```bash
 jq 'select(.kind=="llm") | {trace_id, model: .metadata.model, tokens: (.metadata.prompt_tokens + .metadata.completion_tokens), latency_ms}' logs/traces.jsonl
@@ -134,7 +143,7 @@ logged; a production deployment needs retention limits on both.
 
 ## Known gaps
 
-- **Langfuse not verified live** (see Observability).
+- **Langfuse:** node and tool spans verified live; LLM generation spans and the UI view not yet (see Observability).
 - **Retrieval is lexical** (stemming + a small Hinglish lexicon in `app/grounding/engine.py`). New Hindi vocabulary needs
   a lexicon entry until embedding retrieval is added. *Known issue:* off-topic queries can still retrieve an unrelated
   document (e.g. "what is the weather" retrieves the Sheetali Pranayama doc because it mentions summer weather);
