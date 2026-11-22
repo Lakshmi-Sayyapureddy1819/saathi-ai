@@ -146,3 +146,6 @@ select, input { font: inherit; padding: .6rem .75rem; border: 1px solid #b9cdca;
   .chat { height: calc(100vh - 230px); min-height: 400px; }
   .bubble { max-width: 90%; } .card.safety, .card.success, .card.handoff { max-width: 94%; }
 }
+
+.voice-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px; border-top: 1px solid #e5e7eb; font-size: 14px; }
+.voice-bar select { padding: 4px 6px; }

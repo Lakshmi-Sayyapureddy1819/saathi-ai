@@ -110,6 +110,9 @@ python -m pytest tests -q                 # hermetic: API keys are blanked, no n
 python -m evaluations.run_evals           # live LLM calls if keys are set; writes to evaluations/runs/<stamp>/ (git-ignored)
 python -m evaluations.run_evals --promote # same, then ALSO publish EVALS.md and add a new dated snapshot (see below)
 python -m evaluations.freeze_calibration  # one-off: generate + freeze the responses humans will label (see below)
+python -m evaluations.voice_eval          # 15 scripted voice calls with simulated ASR errors (also part of run_evals)
+python -m evaluations.prompt_iterations   # same coach agent on prompt v1..v4: metrics + injection suite per version
+python -m evaluations.incident_drill      # break the lab API and the prompt on purpose; see docs/INCIDENT_DRILL.md
 ```
 
 `EVALS.md` is the published report: every figure comes from the run it was promoted from, and it ends with a
@@ -118,7 +121,7 @@ python -m evaluations.freeze_calibration  # one-off: generate + freeze the respo
 **Evaluation evidence and tracked files.** LLM output, trace ids and latencies change on every run, so tracking a
 regenerated results file would create ~1,000-line diffs that mean nothing. A normal run therefore writes only to the
 git-ignored `evaluations/runs/<UTC stamp>/` and changes no tracked file. The reviewer-facing evidence is the dated,
-frozen `evaluations/snapshots/eval_results_2026-11-22.json` (provenance and SHA-256 in `evaluations/snapshots/README.md`).
+frozen `evaluations/snapshots/eval_results_2026-11-22_061107.json` (latest; earlier snapshots are kept) (provenance and SHA-256 in `evaluations/snapshots/README.md`).
 `--promote` adds a *new* dated snapshot and rewrites `EVALS.md`; it never overwrites an existing snapshot. Promote
 rarely, and commit the new snapshot together with the `EVALS.md` it belongs to.
 
@@ -222,8 +225,15 @@ logged; a production deployment needs retention limits on both.
   not human-validated, is from the same vendor as the generator and its negative control has 3 cases (details in
   `EVALS.md`). Strict lexical groundedness cannot score Hindi/Hinglish translations.
 - **Judge kappa is N/A** until two independent annotators label the 15 frozen responses.
-- **Voice channel:** STT/TTS and barge-in are simulated (hook + latency metrics exist; no real audio).
+- **Browser voice demo (new, manual):** in the web UI tick "Voice mode" (Chrome/Edge). Uses the browser Web Speech API
+  for STT/TTS (`frontend/src/voice.ts`), sends the transcript through the same `/messages` endpoint, speaks each reply,
+  cuts the speech when you tap the mic (barge-in) and shows time-to-first-audio. It is typecheck- and unit-tested
+  (`toSpeakable`) but **not covered by an automated browser test and not yet measured on real speech**; hi-IN
+  recognition quality depends on the browser. The eval figures below still come from the simulated path.
+- **Voice eval path:** audio is simulated: ASR errors are injected as text, STT is a fixed sleep and TTS is text, so real
+  STT/TTS latency is not measured. Read-back, wrong-booking, latency and time-to-first-audio are measured through the real
+  workflow (`EVALS.md`, Voice). Wellness answers by voice miss the 1.5 s budget (LLM latency, no streaming to TTS).
 - **Approval is unauthenticated** (see ADK section); the simulated emergency SMS is a log line, not a real Twilio call.
 - `ARCHITECTURE.md` LLM costs are measured (n=12 per mode); voice, STT/TTS and Redis costs are not, and its dollar
-  projections in section 3 are marked historical.
-- `gaps.md` is a historical audit and is out of date; see this README instead.
+  projections in section 3 were replaced by a measured-cost estimate with its assumptions stated.
+- `gaps.md` lists what is still open against the brief (model-mix comparison, judge kappa, video, spend figure).

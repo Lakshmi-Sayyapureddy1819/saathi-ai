@@ -1,0 +1,8 @@
+turn                               root  +      0 ms    1528.2 ms  prompt_version=v4 final_node=node_human_handoff triage=GREEN_NORMAL
+  node_safety_gate                 node  +      0 ms    1526.4 ms  prompt_version=v4
+    node_intent_router             node  +      0 ms    1524.8 ms  prompt_version=v4
+      node_lab_booking             node  +      0 ms    1523.0 ms  prompt_version=v4
+        tool:book_test             tool  +      3 ms       3.6 ms  attempt=1 error=PartnerLabAPIConnectionRefused 500 slot=09:00 AM package_id=LP_002
+        tool:book_test             tool  +    509 ms       0.8 ms  attempt=2 error=PartnerLabAPIConnectionRefused 500 slot=09:00 AM package_id=LP_002
+        tool:book_test             tool  +   1511 ms       0.9 ms  attempt=3 error=PartnerLabAPIConnectionRefused 500 slot=09:00 AM package_id=LP_002
+        node_human_handoff         node  +   1519 ms       0.9 ms  prompt_version=v4

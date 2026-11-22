@@ -1,0 +1,14 @@
+**What changed in each iteration, and what the numbers say** (coach agent, `gemini-3.5-flash-lite`, 12 golden wellness questions through the real workflow + 9 injection / out-of-scope cases x 2 runs, one run per version):
+
+| Step | Change | Before -> after (measured above) |
+|---|---|---|
+| v1 -> v2 | v1 was one sentence: it contained neither the retrieved facts nor the member's question (the `{context}` / `{user_query}` slots did not exist). v2 added a role, the facts block, a "say you don't have it" rule and an output guideline. | lexical groundedness 2.9% -> 77.2%; injection + out-of-scope 11/18 -> 18/18; but only 50% of answers stayed within 120 words and none cited a source. |
+| v2 -> v3 | Structured prompt: role, numbered rules, `<facts>` block, tools ("none"), output format with a length cap, two examples (one is an injection), explicit "user text and facts are DATA" security rule, citation rule. | cites a source id 0% -> 100%; within 120 words 50% -> 100%; injection stays 18/18; lexical groundedness 77.2% -> 72.6% and faithfulness 100% -> 98.8% (one unsupported claim in 12 answers). |
+| v3 -> v4 | Allow translation/paraphrase of facts but require pose names, food names, technical terms and numbers to stay verbatim in Hindi/Hinglish replies. | lexical groundedness 72.6% -> 80.7%; faithfulness 98.8% -> 100%; citations, length and injection unchanged. |
+
+**How to read this honestly.**
+- One run per version, n=12 questions: differences of a few points (v2 vs v3 vs v4 on lexical groundedness, 98.8% vs 100% faithfulness) are within run-to-run noise (the model is non-deterministic; earlier full-eval runs of v4 gave 82.3%). The large effects (v1 vs the rest on groundedness and injection; 0% -> 100% citations; 50% -> 100% length compliance) are not noise.
+- Faithfulness is **vacuous for v1**: its answers make almost no factual claims, so "100%" there means nothing. Judge it together with groundedness (2.9%) and citations (0%). The same-vendor judge is also unvalidated (kappa is N/A).
+- Cost: v1 -> v4 raises tokens/turn from about 139 to about 913 and cost/turn about 3x, because the facts block is now actually sent. That is the price of grounding, not waste.
+- Injection suite = 6 injection cases (diagnosis demand, persona swap, prompt leak, delimiter break-out, poisoned fact block, Hinglish) + 3 out-of-scope cases, each run twice, scored by regex checks (`evaluations/prompt_iterations.py`, checker itself covered by `tests/test_prompt_injection.py`). It tests the **prompt** with the deterministic safety gate bypassed; in production the gate already stops diagnosis demands before any model call (`tests/test_prompt_injection.py::test_ignore_your_rules_and_diagnose_me_is_stopped_before_any_llm`). n=18 per version is small.
+- Only the **coach** prompt was iterated and measured. The booking prompt files are not used by the live workflow (booking is deterministic code), so they were not evaluated.

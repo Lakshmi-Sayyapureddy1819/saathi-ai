@@ -1,0 +1,6 @@
+turn                               root  +      0 ms    2920.6 ms  prompt_version=v1 final_node=node_program_coach triage=GREEN_NORMAL
+  node_safety_gate                 node  +      2 ms    2915.1 ms  prompt_version=v1
+    node_intent_router             node  +      6 ms    2909.9 ms  prompt_version=v1
+      node_program_coach           node  +      7 ms    2905.9 ms  prompt_version=v1
+        grounding:mode_a_rag       tool  +      9 ms       8.1 ms  mode=mode_a_rag n_sources=2 empty=False
+        llm:gemini-3.5-flash-lite  llm   +     20 ms    2889.2 ms  model=gemini-3.5-flash-lite route=cost_optimized prompt_tokens=26 completion_tokens=65 prompt_chars=113 cost_usd=0.00017030000000000002

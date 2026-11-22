@@ -30,7 +30,11 @@ from app.workflow.state import (
     UserSessionState, TriageStatus, TriageLevel, MemberProfile, BookingDraft, EmergencyPayload, Turn,
 )
 
-PROMPT_VERSION = "v4"
+import os  # noqa: E402
+
+# Active prompt set. Override with SAATHI_PROMPT_VERSION (used by evaluations/prompt_iterations.py and the incident
+# drill to run the same workflow on another prompt version with no code change). Must name a folder in prompts/.
+PROMPT_VERSION = os.getenv("SAATHI_PROMPT_VERSION", "v4")
 Route = Literal["node_program_coach", "node_lab_booking"]
 NodeFn = Callable[[str, UserSessionState], Tuple[str, UserSessionState]]
 
@@ -71,15 +75,16 @@ def _sanitize(user_text: str) -> str:
 
 
 class WorkflowGraph:
-    def __init__(self, chain: bool = True):
+    def __init__(self, chain: bool = True, model_node: Optional[str] = None):
         # chain=True: nodes call their successors (chat/CLI). chain=False: one step per call; the
         # caller (e.g. the ADK Workflow in adk_graph.py) follows session.next_node.
         self.chain = chain
         self.use_cache = True  # evals disable this to measure uncached latency/tokens
         self.lab_tools = LabTools()
         self.engine = GroundingEngine(lab_tools=self.lab_tools)
-        self.model_client = ModelClient()
-        self.router_client = ModelClient(quality_optimized=False)
+        # model_node: routing entry in config/models.yaml for this channel (e.g. "voice"); None = default routing
+        self.model_client = ModelClient(node=model_node)
+        self.router_client = ModelClient(node=model_node, quality_optimized=False)
         self.nodes: Dict[str, NodeFn] = {
             "node_safety_gate": self.node_safety_gate,
             "node_emergency": self.node_emergency,
@@ -464,7 +469,7 @@ def execute_turn(user_text: str, session: UserSessionState, trace_id: Optional[s
         s.set_output(response)
     session.turn_history.append(Turn(user_text=user_text, response=response, node=session.active_node,
                                      trace_id=session.trace_id))
-    flush()
+    flush(background=session.channel == "voice")  # voice never waits on the trace export
     return response, session
 
 

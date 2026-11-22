@@ -6,11 +6,12 @@ This script serves as an ASR/TTS audio pipeline architecture simulation, designe
 normalization and verbal confirmation logic before booking.
 """
 from app.channels.voice_agent import VoiceAgent
+from app.workflow.graph import WorkflowGraph
 from app.workflow.state import UserSessionState, MemberProfile
 
 def run_demo():
     print("--- Saathi Care AI: Voice Channel Demo ---")
-    agent = VoiceAgent()
+    agent = VoiceAgent(graph=WorkflowGraph(model_node="voice"))
     member = MemberProfile(member_id="VOICE_USER", name="Voice User", age=30)
     session = UserSessionState(channel="voice", member=member, active_node="start")
 

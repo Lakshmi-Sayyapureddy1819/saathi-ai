@@ -118,3 +118,13 @@ def test_yellow_reply_is_per_turn_and_cleared():
     assert "can't provide a medical diagnosis" in out and s.yellow_reply == out
     out2, s = execute_turn("Tell me about Kapalbhati", s, graph=g)          # next turn is a normal one
     assert s.yellow_reply is None and "can't provide a medical diagnosis" not in out2
+
+
+def test_asr_dropped_colon_keeps_the_minutes():
+    """Speech recognisers often write '9 30' for 9:30. It must never be read back as 9:00."""
+    regular = ["09:00 AM", "09:30 AM", "10:00 AM", "10:30 AM", "11:00 AM"]
+    assert match_slot("9 30", regular).slot == "09:30 AM"
+    assert match_slot("10 30 am", regular).slot == "10:30 AM"
+    assert match_slot("10 00", regular).slot == "10:00 AM"
+    assert match_slot("9", regular).slot == "09:00 AM"          # a bare hour is still that hour
+    assert match_slot("9 45", regular).status == "none"         # 9:45 does not exist: re-ask, do not guess

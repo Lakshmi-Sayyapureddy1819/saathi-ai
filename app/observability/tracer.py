@@ -286,7 +286,12 @@ def span(name: str, trace_id: str, kind: str = "node", input: Any = None, **meta
         _write(rec)
 
 
-def flush() -> None:
+def flush(background: bool = False) -> None:
+    """Send buffered spans to Langfuse. background=True returns at once (voice: the ~400 ms network round trip must
+    not sit between the caller finishing a sentence and hearing the reply)."""
+    if background and _langfuse is not None:
+        threading.Thread(target=flush, name="langfuse-flush", daemon=True).start()
+        return
     if _langfuse is not None:
         try:
             _langfuse.flush()

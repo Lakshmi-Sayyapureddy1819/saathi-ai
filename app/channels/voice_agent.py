@@ -6,13 +6,21 @@ and per-turn latency measurement.
 """
 import threading
 import time
-from typing import List, Optional
+from typing import List, Optional, TYPE_CHECKING
 
 from pydantic import BaseModel, ConfigDict
 
 from app.tools.slots import match_slot
 from app.workflow.graph import execute_turn
 from app.workflow.state import UserSessionState
+
+if TYPE_CHECKING:  # avoid a runtime import cycle; the graph is only passed through
+    from app.workflow.graph import WorkflowGraph
+
+# Time-to-first-audio budget: caller stops speaking -> first audible syllable. Allocation (ms):
+#   real STT final result ~400 (assumed, NOT measured here) + workflow <= 600 (measured) + TTS first byte ~300 (assumed)
+#   = 1300, leaving 200 ms slack. Turns that call an LLM cannot meet it without streaming (see EVALS.md voice section).
+TTFA_BUDGET_MS = 1500.0
 
 HINGLISH = {"kal": "tomorrow", "aaj": "today", "subah": "morning", "shaam": "evening", "parso": "day after tomorrow"}
 # Number words are NOT rewritten here: slots.py parses them to integers so "fifteen" != "fifty".
@@ -25,11 +33,15 @@ class VoiceTurnMetrics(BaseModel):
     tts_first_chunk_ms: float
     total_ms: float
     barged_in: bool = False
+    ttfa_ms: float = 0.0  # stt + graph + first TTS chunk: what the caller waits before hearing anything
 
 
 class VoiceAgent:
-    def __init__(self, tts_char_delay: float = 0.02):
+    def __init__(self, tts_char_delay: float = 0.02, graph: Optional["WorkflowGraph"] = None, verbose: bool = True):
         self.tts_char_delay = tts_char_delay
+        self.graph = graph          # reuse one workflow across turns (None: a fresh one per turn, as before)
+        self.verbose = verbose
+        self.last_spoken: str = ""  # exactly what the caller heard on the last turn (for read-back checks)
         self._barge_in = threading.Event()
         self.metrics: List[VoiceTurnMetrics] = []
 
@@ -50,16 +62,21 @@ class VoiceAgent:
         self._barge_in.clear()
         t0 = time.perf_counter()
         first: Optional[float] = None
-        print("TTS: ", end="", flush=True)
+        self.last_spoken = text
+        if self.verbose:
+            print("TTS: ", end="", flush=True)
         for ch in text:
             if self._barge_in.is_set():
-                print(" [interrupted]")
+                if self.verbose:
+                    print(" [interrupted]")
                 return first or 0.0, True
             if first is None:
                 first = (time.perf_counter() - t0) * 1000
-            print(ch, end="", flush=True)
+            if self.verbose:
+                print(ch, end="", flush=True)
             time.sleep(self.tts_char_delay)
-        print()
+        if self.verbose:
+            print()
         return first or 0.0, False
 
     def readback(self, transcript: str, session: UserSessionState) -> Optional[str]:
@@ -79,12 +96,14 @@ class VoiceAgent:
         t0 = time.perf_counter()
         transcript = self.transcribe(user_audio_transcript)
         t1 = time.perf_counter()
-        print(f"[ASR]: {transcript}")
-        response, session = execute_turn(transcript, session)
+        if self.verbose:
+            print(f"[ASR]: {transcript}")
+        response, session = execute_turn(transcript, session, graph=self.graph)
         t2 = time.perf_counter()
         first_ms, barged = self.speak(response)
         t3 = time.perf_counter()
         self.metrics.append(VoiceTurnMetrics(stt_ms=round((t1 - t0) * 1000, 1), graph_ms=round((t2 - t1) * 1000, 1),
                                              tts_first_chunk_ms=round(first_ms, 1),
-                                             total_ms=round((t3 - t0) * 1000, 1), barged_in=barged))
+                                             total_ms=round((t3 - t0) * 1000, 1), barged_in=barged,
+                                             ttfa_ms=round((t1 - t0) * 1000 + (t2 - t1) * 1000 + first_ms, 1)))
         return session

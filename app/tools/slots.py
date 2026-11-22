@@ -40,6 +40,14 @@ def _extract_times(text: str) -> List[tuple[int, int, Optional[str]]]:
     """Return (hour, minute, 'am'|'pm'|None) candidates found in text."""
     t = text.lower()
     out: List[tuple[int, int, Optional[str]]] = []
+    # ASR often drops the colon: "9 30" means 9:30, never 9:00 (the minutes must not be silently ignored).
+    def _spaced(m: "re.Match[str]") -> str:
+        h, mi = int(m.group(1)), int(m.group(2))
+        if 0 <= h <= 23:
+            out.append((h, mi, m.group(3)))
+            return " "
+        return m.group(0)
+    t = re.sub(r"\b(\d{1,2})\s+([0-5]\d)\b(?:\s*(am|pm)\b)?", _spaced, t)
     # Digits: 8, 8:30, 08:30 am, 830 am
     for m in re.finditer(r"\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b", t):
         h, mi, ap = int(m.group(1)), int(m.group(2) or 0), m.group(3)

@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { isMockReply } from "../format";
 import type { ChatMessage } from "../types";
+import { useVoice, type VoiceLang } from "../voice";
 
 interface Props {
   messages: ChatMessage[];
@@ -80,6 +81,19 @@ function Bubble({ m, onRetry, onDismiss }: { m: ChatMessage; onRetry: () => void
 
 export function Chat({ messages, busy, paused, maxChars, error, onSend, onRetry, onDismissError }: Props) {
   const [draft, setDraft] = useState("");
+  const [voiceOn, setVoiceOn] = useState(false);
+  const [vlang, setVlang] = useState<VoiceLang>("en-IN");
+  const voice = useVoice((t) => { if (!busy && !paused) onSend(t); }, vlang);
+  const spoken = useRef<number>(messages.length);
+  // Read each new assistant reply aloud (voice mode only). Same workflow reply as chat; only the edge differs.
+  useEffect(() => {
+    if (messages.length <= spoken.current) { spoken.current = messages.length; return; }
+    const fresh = messages.slice(spoken.current); spoken.current = messages.length;
+    if (!voiceOn) return;
+    const last = [...fresh].reverse().find((m) => m.role !== "user" && m.role !== "system");
+    if (last) voice.speak(last.kind === "emergency" ? (last.emergency?.message ?? last.text) : last.text);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages, voiceOn]);
   const endRef = useRef<HTMLDivElement>(null);
   useEffect(() => { endRef.current?.scrollIntoView?.({ block: "end" }); }, [messages.length, busy]);
 
@@ -122,6 +136,30 @@ export function Chat({ messages, busy, paused, maxChars, error, onSend, onRetry,
           <span>{error.message}</span>
           <span><button className="btn small" onClick={onRetry}>Retry</button>
             <button className="btn small ghost" onClick={onDismissError}>Dismiss</button></span>
+        </div>
+      )}
+
+      {voice.supported && (
+        <div className="voice-bar" data-testid="voice-bar">
+          <label><input type="checkbox" checked={voiceOn}
+            onChange={(e) => { setVoiceOn(e.target.checked); if (!e.target.checked) { voice.stopSpeaking(); voice.stopListening(); } }} />
+            {" "}Voice mode</label>
+          {voiceOn && (
+            <>
+              <select aria-label="Voice language" value={vlang} onChange={(e) => setVlang(e.target.value as VoiceLang)}>
+                <option value="en-IN">English / Hinglish (en-IN)</option>
+                <option value="hi-IN">Hindi (hi-IN)</option>
+              </select>
+              <button type="button" className={`btn small${voice.listening ? " primary" : ""}`} disabled={busy || paused}
+                onClick={voice.listening ? voice.stopListening : voice.listen} data-testid="mic">
+                {voice.listening ? "Listening… (tap to stop)" : voice.speaking ? "🎤 Interrupt & speak" : "🎤 Speak"}
+              </button>
+              {voice.interim && <span className="meta" data-testid="interim">Heard: “{voice.interim}”</span>}
+              {voice.lastTtfaMs !== null && <span className="meta" data-testid="ttfa">Time to first audio: {voice.lastTtfaMs} ms</span>}
+              <small className="help">Browser speech recognition can mishear numbers and dates. Saathi reads back the test, date and time and needs a clear "yes" before booking.</small>
+            </>
+          )}
+          {voice.error && <span className="meta err" role="alert">{voice.error}</span>}
         </div>
       )}
 

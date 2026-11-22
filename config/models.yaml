@@ -23,3 +23,24 @@ routing:
       description: "Optimized for reasoning and quality. Used for complex summarization and final response generation."
       default_model: gemini-3.8-flash
       fallback_model: gpt-4o
+
+    # Voice: latency-first (brief budget 1.5 s to first audio). Chosen from evaluations/model_mix.py: passes the quality
+    # gates, lowest latency p95 of the four mixes. Fallback is the cheapest non-Google model (different vendor on outage).
+    - name: voice
+      description: "Voice channel: smallest/fastest model that passes the quality gates."
+      default_model: gemini-3.5-flash-lite
+      fallback_model: gpt-4o-mini
+
+    # Eval-only mixes (evaluations/model_mix.py): NO fallback, so a failure is counted, not hidden by another vendor.
+    - name: mix_gemini_lite
+      description: "Eval mix: Google small model."
+      default_model: gemini-3.5-flash-lite
+    - name: mix_gemini_flash
+      description: "Eval mix: Google larger model."
+      default_model: gemini-3.8-flash
+    - name: mix_openai_mini
+      description: "Eval mix: non-Google small model."
+      default_model: gpt-4o-mini
+    - name: mix_openai_4o
+      description: "Eval mix: non-Google larger model."
+      default_model: gpt-4o

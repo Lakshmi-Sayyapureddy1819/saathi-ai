@@ -24,6 +24,7 @@ from app.tools.lab_tools import LabTools, FASTING_SLOTS, REGULAR_SLOTS
 from app.workflow.graph import WorkflowGraph, execute_turn
 from app.workflow.model_client import ModelClient
 from app.workflow.state import UserSessionState, MemberProfile, GroundingMode
+from evaluations.voice_eval import run_voice_eval, voice_section_md
 
 logging.basicConfig(level=logging.ERROR)
 TRACE_FILE = os.environ["TRACE_FILE"]
@@ -102,7 +103,9 @@ LIMITATIONS_MD = """## Limitations (read before quoting any number above)
   to ~53% (exact one-sided 95% bound).
 - Chaos recovery: **n=5** forced-outage runs. 5/5 recovered is consistent with a true recovery rate as low as ~55%.
 - Red-flag recall **n=8** (true rate could be as low as ~69%), no-diagnosis compliance **n=5** (~55%), grounding and
-  faithfulness **n=12**, Mode A/B comparison **n=12 turns per mode, one run** (run-to-run variation is about 25%).
+  faithfulness **n=12**, Mode A/B comparison **n=12 turns per mode, one run**. Token and cost figures varied about 25% between runs;
+  **latency varied about 2x** (Mode A mean 2.7 s in one run, 4.7 s in another on the same day) because of provider load, so
+  quote latency as a range, not a point.
 
 **Faithfulness judge (LLM claim-level support).**
 - **Not human-validated.** No human labels exist yet (kappa rows are N/A), so its agreement with people is unknown.
@@ -111,6 +114,9 @@ LIMITATIONS_MD = """## Limitations (read before quoting any number above)
 - **The negative control has only 3 cases** (one faithful, two fabricated). It shows the judge *can* flag blatant
   fabrications, not that it catches subtle ones. A 100% faithfulness score should be read as "no blatant
   unsupported claims found", not "proven faithful". The judge is also non-deterministic.
+
+**Groundedness target.** Lexical groundedness for the same v4 prompt was 82.3%, 76.7%, 78.6% and 74.6% in four runs on 2026-11-22
+(n=12-13), so it sits around the 80% target and the target is **not reliably met**; the number moves with the model's wording.
 
 **Strict lexical groundedness** is English-only: it cannot score faithful Hindi/Hinglish translations, so it
 understates Hinglish answers. It is kept, with its original definition, for comparability.
@@ -309,6 +315,46 @@ def write_outputs(results: dict, report_body: str, *, promote: bool, now: dateti
     return written
 
 
+def ab_recommendation_md(ab: Dict[str, Dict[str, List[float]]]) -> str:
+    """When to recommend each grounding mode. The ratios are computed from this run's A/B table, not typed in."""
+    a, b = ab.get("mode_a_rag", {}), ab.get("mode_b_facts", {})
+    if not (a.get("cost") and b.get("cost") and a.get("lat") and b.get("lat")):
+        return "### Which mode I would recommend\n\nN/A: no real LLM calls in this run, so no measured basis.\n"
+    cost_x = statistics.mean(a["cost"]) / statistics.mean(b["cost"])
+    tok_a, tok_b = statistics.mean(a["tok"]), statistics.mean(b["tok"])
+    lat_d = statistics.mean(a["lat"]) - statistics.mean(b["lat"])
+    return (
+        "### Which mode I would recommend, and when\n\n"
+        f"**Measured here:** Mode A costs {cost_x:.1f}x more per turn and is ~{lat_d:.0f} ms slower (mean), because retrieved "
+        f"passages enlarge the prompt ({tok_a:.0f} vs {tok_b:.0f} tokens/turn). One run, n=12 per mode; hallucination "
+        "rate per mode was **not** measured separately (the faithfulness judge scores Mode A answers only), so the advice "
+        "below rests on that cost/latency gap plus how each mode fails, not on a measured accuracy gap.\n\n"
+        "**Recommend Mode B (facts + tools) when** the client has no vector store yet, or the questions are about the "
+        "member's own data (schedule, bookings, profile, package catalogue) that already sits behind an API. The facts are "
+        "exact and current, nothing can be stale or mis-retrieved, it is the cheapest and fastest option, and the safe "
+        "failure is the plain \"I don't have that information\". The limits: it can only answer what the tools expose, and "
+        "member-specific answers can never go in the shared cache.\n\n"
+        "**Recommend Mode A (agentic RAG) when** the client has a large or frequently edited content library (yoga "
+        "practices, diet guidance, FAQs) and members ask open-ended \"how / why / what helps\" questions that no table "
+        "lookup can answer, and answers must cite their source document. Budget for the higher per-turn cost, an index to "
+        "keep fresh, and the known retrieval gap in the limitations below (no off-topic rejection).\n\n"
+        "**My default for this client:** start with Mode B for anything about the member (it is deterministic and cheap), "
+        "add Mode A only for the content library, and let deterministic code, not the LLM, pick the mode per question.\n")
+
+
+def prompt_iterations_md() -> str:
+    """Latest prompt-iteration snapshot (evaluations/snapshots/prompt_iterations_*.md), with its reading notes."""
+    snaps = sorted(SNAPSHOTS_DIR.glob("prompt_iterations_*.md"))
+    if not snaps:
+        return "## Prompt iterations (coach agent)\n\nNot run yet: `python -m evaluations.prompt_iterations`.\n"
+    latest = snaps[-1]
+    notes = latest.with_suffix(".notes.txt")
+    return ("## Prompt iterations (coach agent, same cases, one run per version)\n\n"
+            f"Source: `evaluations/snapshots/{latest.with_suffix('.json').name}` (`python -m evaluations.prompt_iterations`).\n\n"
+            + latest.read_text(encoding="utf-8") + "\n"
+            + (notes.read_text(encoding="utf-8") if notes.exists() else "") + "\n")
+
+
 def main(promote: bool = False) -> None:
     print("--- Saathi Care AI evaluation ---")
     with open("evaluations/datasets/golden_eval_set.json", encoding="utf-8") as f:
@@ -382,6 +428,9 @@ def main(promote: bool = False) -> None:
         booked = len(s.member.past_bookings) > 0
         wrong = wrong.add(booked and (want_slot is None or want_slot not in s.member.past_bookings[-1]))
 
+    # Voice: 15 scripted calls with simulated ASR errors through the same workflow (evaluations/voice_eval.py).
+    voice = run_voice_eval(graph)
+
     # Mode A vs Mode B: measured latency/tokens/cost over the wellness cases.
     ab: Dict[str, Dict[str, List[float]]] = {}
     graph.use_cache = False  # A/B must measure real generation, not cache hits
@@ -434,6 +483,15 @@ def main(promote: bool = False) -> None:
          "N/A" if judge_ok is None else ("PASS" if judge_ok else "FAIL"), "PASS", "n=3"),
         ("Wrong-booking rate", fmt(wrong.pct()), "0%", f"n={wrong.total}"),
         ("Chaos recovery (handoff on outage)", fmt(chaos.pct()), ">= 90%", f"n={chaos.total}"),
+        ("Voice: read-back correctness (simulated ASR errors)",
+         fmt(round(100 * voice.readback_ok / voice.readback_checks, 1)) if voice.readback_checks else "N/A", "100%",
+         f"{voice.readback_ok}/{voice.readback_checks} checks"),
+        ("Voice: wrong-booking rate", fmt(round(100 * voice.wrong_bookings / voice.n_scenarios, 1)), "0%",
+         f"n={voice.n_scenarios} calls"),
+        ("Voice: turn latency p50 / p95 (workflow, no LLM)", f"{voice.graph_ms_p50} / {voice.graph_ms_p95} ms", "-",
+         f"n={voice.n_turns} turns"),
+        ("Voice: time to first audio p50 / p95 (simulated STT+TTS)", f"{voice.ttfa_ms_p50} / {voice.ttfa_ms_p95} ms",
+         f"<= {int(voice.ttfa_budget_ms)} ms", f"{voice.turns_over_budget}/{voice.n_turns} over budget"),
         ("Calibration set frozen + hash verified", calib_status, "OK", f"n={calib_n}"),
         ("Inter-annotator kappa (human A vs B)", fmt_k(agree["human_vs_human"], agree["n"]), ">= 0.6", f"n={agree['n']}"),
         ("Judge kappa vs annotator A", fmt_k(agree["judge_vs_a"], agree["n"]), ">= 0.6", f"n={agree['n']}"),
@@ -450,8 +508,10 @@ def main(promote: bool = False) -> None:
     print("\n" + table + "\n\n" + ab_table + note)
 
     report_body = ("## Metrics\n\n" + table + "\n\n## Mode A (retrieval) vs Mode B (facts + tools)\n\n" + ab_table + note
-                   + chr(10) + LIMITATIONS_MD)
-    paths = write_outputs({"rows": rows, "ab": ab, "groundedness_audit": audit, "raw": raw}, report_body,
+                   + chr(10) + ab_recommendation_md(ab) + chr(10) + voice_section_md(voice) + chr(10)
+                   + prompt_iterations_md() + chr(10) + LIMITATIONS_MD)
+    paths = write_outputs({"rows": rows, "ab": ab, "voice": voice.model_dump(), "groundedness_audit": audit,
+                           "raw": raw}, report_body,
                           promote=promote, now=datetime.now(timezone.utc))
     print("Wrote: " + ", ".join(str(p) for p in paths))
     if not promote:

@@ -73,6 +73,7 @@ PATTERNS_YELLOW_WARNING = {
         r"|tell\s+me\s+(?:my|what)\s+(?:illness|disease|condition)"
         r"|mujhe\s+(?:\w+\s+)?(?:hai\s+kya|ho\s+gaya\s+hai\s+kya|ki\s+bimari\s+hai)"
         r"|kya\s+mujhe\s+\w+\s+(?:hai|ho\s+sakta)"
+        r"|mujhe\s+(?:\w+\s+){0,2}hai\s+ya\s+nahi"
         r")",
         re.IGNORECASE,
     )

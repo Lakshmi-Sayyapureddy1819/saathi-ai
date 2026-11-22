@@ -29,6 +29,8 @@ def test_pricing_is_date_aware_and_covers_configured_models():
     assert abs(_cost("gemini-3.8-flash", 1_000_000, 1_000_000, date(2027, 1, 1)) - 9.00) < 1e-9
     cfg = yaml.safe_load(open("config/models.yaml", encoding="utf-8"))
     for n in cfg["routing"]["nodes"]:
-        for m in (n["default_model"], n["fallback_model"]):
+        for m in (n["default_model"], n.get("fallback_model")):
+            if m is None:
+                continue
             assert m in PRICING, f"no price for configured model {m}"
         assert "gemini-2.5" not in n["default_model"]
