@@ -2,7 +2,8 @@
 import os
 import logging
 import time
-from typing import Optional
+from datetime import date
+from typing import List, Optional
 
 import requests
 import yaml
@@ -27,21 +28,29 @@ class PricingEntry(BaseModel):
     model_config = ConfigDict(frozen=True)
     input_per_mtok: float
     output_per_mtok: float
+    effective_from: date = date.min  # the newest entry whose date <= today applies
 
 
-# USD per 1M tokens. Update from the providers' pricing pages; used only for cost estimates.
-PRICING: dict[str, PricingEntry] = {
-    "gemini-2.5-flash": PricingEntry(input_per_mtok=0.30, output_per_mtok=2.50),
-    "gemini-2.5-pro": PricingEntry(input_per_mtok=1.25, output_per_mtok=10.00),
-    "gpt-4o-mini": PricingEntry(input_per_mtok=0.15, output_per_mtok=0.60),
-    "gpt-4o": PricingEntry(input_per_mtok=2.50, output_per_mtok=10.00),
+# USD per 1M tokens, Standard paid tier. Verified 2026-11-22 against aistudio.google.com/docs/pricing and
+# OpenAI API pricing. gemini-3.8-flash doubles on 2027-01-01 (published schedule), so entries are date-aware.
+# gemini-2.5-* stays only for historical traces: Google shuts them down 2026-12-01.
+PRICING: dict[str, List[PricingEntry]] = {
+    "gemini-3.5-flash-lite": [PricingEntry(input_per_mtok=0.30, output_per_mtok=2.50)],
+    "gemini-3.8-flash": [PricingEntry(input_per_mtok=0.75, output_per_mtok=3.75),
+                         PricingEntry(input_per_mtok=1.50, output_per_mtok=7.50, effective_from=date(2027, 1, 1))],
+    "gemini-2.5-flash": [PricingEntry(input_per_mtok=0.30, output_per_mtok=2.50)],
+    "gemini-2.5-pro": [PricingEntry(input_per_mtok=1.25, output_per_mtok=10.00)],
+    "gpt-4o-mini": [PricingEntry(input_per_mtok=0.15, output_per_mtok=0.60)],
+    "gpt-4o": [PricingEntry(input_per_mtok=2.50, output_per_mtok=10.00)],
 }
 
 
-def _cost(model: str, prompt_tokens: int, completion_tokens: int) -> float:
-    p = PRICING.get(model)
-    if p is None:
+def _cost(model: str, prompt_tokens: int, completion_tokens: int, today: Optional[date] = None) -> float:
+    today = today or date.today()
+    applicable = [e for e in PRICING.get(model, []) if e.effective_from <= today]
+    if not applicable:
         return 0.0
+    p = max(applicable, key=lambda e: e.effective_from)
     return (prompt_tokens * p.input_per_mtok + completion_tokens * p.output_per_mtok) / 1_000_000
 
 
@@ -108,7 +117,9 @@ class ModelClient:
                 raise RuntimeError(f"Gemini API returned {r.status_code}")  # body omitted: may echo request
             data = r.json()
             usage = data.get("usageMetadata", {})
-            pt, ct = usage.get("promptTokenCount", 0), usage.get("candidatesTokenCount", 0)
+            pt = usage.get("promptTokenCount", 0)
+            # Gemini 2.5 bills "thinking" tokens as output but reports them separately.
+            ct = usage.get("candidatesTokenCount", 0) + usage.get("thoughtsTokenCount", 0)
             return LLMResult(text=data["candidates"][0]["content"]["parts"][0]["text"], model=model_id,
                              prompt_tokens=pt, completion_tokens=ct,
                              latency_ms=round((time.perf_counter() - t0) * 1000, 2),

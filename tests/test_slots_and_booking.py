@@ -78,3 +78,43 @@ def test_trace_id_propagates():
     g = WorkflowGraph()
     _, s = execute_turn("I have severe chest pain", _session(), graph=g)
     assert s.trace_id and s.turn_history[-1].trace_id == s.trace_id
+
+
+def test_spoken_minutes_never_collapse_to_the_bare_hour():
+    nine = ["09:00 AM", "09:15 AM", "09:30 AM"]
+    assert match_slot("fifteen past nine", ["09:00 AM", "09:30 AM"]).status != "matched"  # 9:15 not offered
+    assert match_slot("fifteen past nine", nine).slot == "09:15 AM"
+    assert match_slot("quarter to ten", ["09:45 AM"]).slot == "09:45 AM"
+    assert match_slot("half past nine", nine).slot == "09:30 AM"
+    assert match_slot("nine fifty", nine).status != "matched"
+    assert match_slot("fifty", nine).status == "ambiguous"
+
+
+def test_diagnosis_phrasings_hit_yellow():
+    for text in ["Can you tell me if I have cancer based on these symptoms?",
+                 "So, is it diabetes then? Just tell me yes or no.",
+                 "do i have thyroid", "mujhe diabetes hai kya"]:
+        assert evaluate_safety_gate(text, "T")[1] == "YELLOW_WARNING", text
+    for text in ["What is the best time for yoga?", "I want to book a thyroid test"]:
+        assert evaluate_safety_gate(text, "T")[1] == "GREEN_NORMAL", text
+
+
+def test_mode_b_answers_never_use_shared_cache(monkeypatch):
+    from app.grounding.semantic_cache import wellness_cache
+    from app.workflow.state import GroundingMode
+    g = WorkflowGraph()
+    wellness_cache.cache.clear()
+    wellness_cache.set("tell me about yoga for stress", "SHARED ANSWER")
+    s = _session()
+    s.grounding_mode = GroundingMode(mode="mode_b_facts")
+    out, _ = g.node_program_coach("tell me about yoga for stress", s)
+    assert out != "SHARED ANSWER"
+
+
+def test_yellow_reply_is_per_turn_and_cleared():
+    g = WorkflowGraph()
+    s = _session()
+    out, s = execute_turn("do i have diabetes?", s, graph=g)
+    assert "can't provide a medical diagnosis" in out and s.yellow_reply == out
+    out2, s = execute_turn("Tell me about Kapalbhati", s, graph=g)          # next turn is a normal one
+    assert s.yellow_reply is None and "can't provide a medical diagnosis" not in out2

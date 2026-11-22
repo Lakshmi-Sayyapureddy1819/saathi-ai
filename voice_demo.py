@@ -15,14 +15,24 @@ def run_demo():
     session = UserSessionState(channel="voice", member=member, active_node="start")
 
     print("Simulating inbound call...")
-    print("User (Audio): I want to book a blood test for kal subah.")
-    session = agent.process_voice_turn("I want to book a blood test for kal subah.", session)
-    
-    print("\nUser (Audio): 09:00 AM")
-    session = agent.process_voice_turn("09:00 AM", session)
-    
-    print("\nUser (Audio): yes confirm")
-    session = agent.process_voice_turn("yes confirm", session)
+    # Generic request -> the agent asks WHICH test; the caller answers; then time and confirmation.
+    turns = [
+        "I want to book a blood test for kal subah.",
+        "the thyroid one",
+        "09:00 AM",
+        "yes confirm",
+    ]
+    for utterance in turns:
+        print()
+        print(f"User (Audio): {utterance}")
+        session = agent.process_voice_turn(utterance, session)
+
+    print()
+    print(f"Bookings on file: {session.member.past_bookings or None}")
+    if agent.metrics:
+        last = agent.metrics[-1]
+        print(f"Last turn latency (ms): stt={last.stt_ms} graph={last.graph_ms} tts_first_chunk={last.tts_first_chunk_ms}")
+
 
 if __name__ == "__main__":
     run_demo()

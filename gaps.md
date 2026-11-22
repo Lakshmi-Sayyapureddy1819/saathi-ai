@@ -1,3 +1,13 @@
+> **HISTORICAL DOCUMENT - SUPERSEDED. DO NOT READ AS THE CURRENT STATE.**
+> This is an early audit written before most fixes. Several statements below are no longer true, e.g.:
+> ADK is now installed and used (`app/workflow/adk_graph.py`, google-adk 2.11); the failing routing test and the
+> syntax error are fixed (the suite is green); the tracer was rewritten; the exposed key was removed from tracked
+> files (it must still be rotated); and the grounding, eval and booking issues listed were addressed.
+> For the current status and remaining limitations see `README.md` (Known gaps) and the Limitations section of
+> `EVALS.md`. Kept only as a record of what the audit found.
+
+---
+
 Short answer: no. The repo covers the happy-path skeleton of the brief and has major gaps. Several README, EVALS and ARCHITECTURE claims are not backed by the code. I read every source file and ran the tests. I did not run the evals.
 
 Blocking problems

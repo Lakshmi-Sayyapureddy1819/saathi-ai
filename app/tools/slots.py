@@ -14,7 +14,7 @@ _UNITS = {
     "sixteen": 16, "seventeen": 17, "eighteen": 18, "nineteen": 19, "twenty": 20, "thirty": 30,
     "forty": 40, "fifty": 50,
     # Hinglish
-    "ek": 1, "do": 2, "teen": 3, "char": 4, "paanch": 5, "chhe": 6, "saat": 7, "aath": 8, "nau": 9,
+    "ek": 1, "teen": 3, "char": 4, "paanch": 5, "chhe": 6, "saat": 7, "aath": 8, "nau": 9,
     "das": 10, "gyarah": 11, "barah": 12, "pandrah": 15, "bees": 20, "tees": 30, "chalis": 40, "pachaas": 50,
 }
 _HALF = {"half", "saadhe", "sadhe"}
@@ -49,27 +49,80 @@ def _extract_times(text: str) -> List[tuple[int, int, Optional[str]]]:
             out.append((h, 0, ap))
     # Words: "seven thirty", "half past seven", "saadhe saat"
     words = re.findall(r"[a-z]+", t)
-    for i, w in enumerate(words):
-        if w in _UNITS and _UNITS[w] <= 12:
-            h = _UNITS[w]
-            prev_half = i > 0 and words[i - 1] in _HALF | {"past"} and any(x in _HALF for x in words[max(0, i - 2):i])
-            nxt = words[i + 1] if i + 1 < len(words) else None
-            mi = 0
-            if prev_half:
-                mi = 30
-            elif nxt in _UNITS and _UNITS[nxt] >= 15 and _UNITS[nxt] % 5 == 0 and nxt not in ("do",):
-                mi = _UNITS[nxt]
-                if i + 2 < len(words) and words[i + 2] in _UNITS and _UNITS[words[i + 2]] < 10 and mi >= 20:
-                    mi += _UNITS[words[i + 2]]
-            ap = next((x for x in words[i + 1:i + 4] if x in ("am", "pm")), None)
-            if prev_half or mi or ap or (nxt in (None, "baje", "o", "oclock", "please", "bje")):
-                out.append((h, mi, ap))
+    out.extend(_word_times(words)[0])
     return out
+
+
+def _num(words: List[str], i: int) -> Optional[int]:
+    return _UNITS.get(words[i]) if 0 <= i < len(words) else None
+
+
+def _minutes_at(words: List[str], i: int) -> tuple[Optional[int], int]:
+    """Parse a minute expression at i ('quarter', 'fifteen', 'twenty five'). Returns (minutes, next_index)."""
+    if i < len(words) and words[i] == "quarter":
+        return 15, i + 1
+    v = _num(words, i)
+    if v is None or v < 13:
+        return None, i
+    nxt = _num(words, i + 1)
+    if v in (20, 30, 40, 50) and nxt is not None and 1 <= nxt <= 9:
+        return v + nxt, i + 2
+    return v, i + 1
+
+
+def _word_times(words: List[str]) -> tuple[List[tuple[int, int, Optional[str]]], bool]:
+    """Parse spoken times. Returns (candidates, unparsed_minute_words).
+
+    Handles: 'seven thirty', 'half past seven', 'fifteen past nine' (9:15), 'quarter to eight' (7:45),
+    'twenty to ten', 'saadhe saat'. Any minute word (>12) we could not attach to an hour sets the flag, so the
+    caller must NOT fall back to the bare hour (that is how 'fifteen past nine' could become 9:00)."""
+    out: List[tuple[int, int, Optional[str]]] = []
+    consumed: set[int] = set()
+    ap_after = lambda j: next((x for x in words[j:j + 3] if x in ("am", "pm")), None)  # noqa: E731
+    for i, w in enumerate(words):
+        # "<minutes> past|to <hour>"
+        mins, j = _minutes_at(words, i)
+        if mins is not None and j < len(words) and words[j] in ("past", "to"):
+            h = _num(words, j + 1)
+            if h is not None and 1 <= h <= 12:
+                if words[j] == "past":
+                    out.append((h, mins, ap_after(j + 2)))
+                else:
+                    out.append(((h - 2) % 12 + 1, 60 - mins, ap_after(j + 2)))
+                consumed.update(range(i, j + 2))
+                continue
+        # "half past <hour>" / "saadhe <hour>"
+        if w in _HALF:
+            k = i + 2 if i + 1 < len(words) and words[i + 1] == "past" else i + 1
+            h = _num(words, k)
+            if h is not None and 1 <= h <= 12:
+                out.append((h, 30, ap_after(k + 1)))
+                consumed.update(range(i, k + 1))
+    for i, w in enumerate(words):
+        if i in consumed:
+            continue
+        h = _num(words, i)
+        if h is None or not 1 <= h <= 12:
+            continue
+        mins, j = _minutes_at(words, i + 1)
+        if mins is not None and mins % 5 == 0 and mins >= 15 or (mins is not None and mins > 20):
+            out.append((h, mins, ap_after(j)))
+            consumed.update(range(i, j))
+        else:
+            nxt = words[i + 1] if i + 1 < len(words) else None
+            ap = ap_after(i + 1)
+            if ap or nxt in (None, "baje", "bje", "o", "oclock", "please", "sharp"):
+                out.append((h, 0, ap))
+                consumed.add(i)
+    unparsed = any(i not in consumed and (_num(words, i) or 0) > 12 for i in range(len(words)))
+    return out, unparsed
 
 
 def match_slot(text: str, slots: List[str]) -> SlotMatch:
     """Match free text (or ASR transcript) to exactly one slot, or say it is ambiguous/unknown."""
     cands = _extract_times(text)
+    if _word_times(re.findall(r"[a-z]+", text.lower()))[1]:
+        return SlotMatch(status="ambiguous")  # a spoken minute we couldn't place: ask again, never guess the hour
     if not cands:
         return SlotMatch(status="none")
     hits: set[str] = set()

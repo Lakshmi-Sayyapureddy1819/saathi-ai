@@ -18,7 +18,26 @@ from app.workflow.state import UserSessionState
 
 _TOKEN = re.compile(r"[a-z0-9]+")
 _STOP = {"what", "how", "the", "and", "for", "with", "this", "that", "about", "tell", "does", "have", "are",
-         "mujhe", "kya", "hai", "ke", "ki", "ka", "kaise", "karte", "karo", "aur"}
+         "mujhe", "kya", "hai", "ke", "ki", "ka", "kaise", "karte", "karo", "aur", "liye", "hain", "fayde", "ko", "se"}
+
+
+# Hinglish/Hindi -> English retrieval vocabulary. The program library is written in English with a few Hindi
+# titles, so a Hindi query word has no lexical overlap with the right document ("garmi" vs "cooling"/"summer").
+# Small, explicit and deterministic; extend it as new query vocabulary shows up in the traces.
+HINGLISH_EXPANSION = {
+    "garmi": ["heat", "hot", "cooling", "summer"], "garmiyon": ["heat", "cooling", "summer"],
+    "thakan": ["fatigue", "tired", "exhaustion"], "thakaan": ["fatigue", "exhaustion"],
+    "tanav": ["stress", "relax"], "chinta": ["anxiety", "stress"], "neend": ["sleep", "insomnia"],
+    "sardi": ["cold", "cough"], "pet": ["stomach", "digestion"], "vajan": ["weight"], "motapa": ["weight"],
+    "paani": ["water", "hydration"], "pani": ["water", "hydration"], "aaram": ["relax", "relaxation"],
+    "sehat": ["health", "healthy"], "khana": ["food", "diet"], "aahar": ["food", "diet"],
+    "dard": ["pain"], "kamar": ["back", "pain"], "ghabrahat": ["anxiety"],
+}
+
+
+def _stem(token: str) -> str:
+    """Cheap stemmer: tokens sharing a 5-char prefix are the same word (relax~relaxation, digest~digestion)."""
+    return token[:5] if len(token) >= 5 else token
 
 
 class GroundingContext(BaseModel):
@@ -44,18 +63,23 @@ class GroundingEngine:
         return [t for t in _TOKEN.findall(text.lower()) if len(t) > 2 and t not in _STOP]
 
     def mode_a_retrieval(self, query: str, top_k: int = 2) -> GroundingContext:
-        q = set(self._tokens(query))
+        base = self._tokens(query)
+        expanded = [e for t in base for e in HINGLISH_EXPANSION.get(t, [])]
+        q = {_stem(t) for t in base} | {_stem(t) for t in expanded}
         scored = []
         for p in self.programs:
-            title_tags = set(self._tokens(p["title"] + " " + " ".join(p.get("tags", []))))
-            body = set(self._tokens(p["content"]))
+            title_tags = {_stem(t) for t in self._tokens(p["title"] + " " + " ".join(p.get("tags", [])))}
+            body = {_stem(t) for t in self._tokens(p["content"])}
             score = 3 * len(q & title_tags) + len(q & body)  # title/tag hits weigh more
             if score > 0:
                 scored.append((score, p))
         scored.sort(key=lambda x: x[0], reverse=True)
         if not scored:
             return GroundingContext(mode="mode_a_rag", text="(no matching documents)", empty=True)
-        hits = [p for _, p in scored[:top_k]]
+        # Keep a runner-up only if it is nearly as relevant as the best hit: a weak match (e.g. sharing just
+        # "fayde") is noise that dilutes the context and costs tokens.
+        best = scored[0][0]
+        hits = [p for sc, p in scored[:top_k] if sc >= 0.5 * best]
         text = "\n".join(f"[{h['doc_id']}] {h['title']}: {h['content']}" for h in hits)
         return GroundingContext(mode="mode_a_rag", text=text, sources=[h["doc_id"] for h in hits])
 

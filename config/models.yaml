@@ -3,8 +3,8 @@
 providers:
   - name: gemini
     models:
-      - id: gemini-2.5-flash
-      - id: gemini-3.1-pro
+      - id: gemini-3.5-flash-lite   # replaces gemini-2.5-flash (Google deprecation page, shutdown 2026-12-01)
+      - id: gemini-3.8-flash        # replaces gemini-2.5-pro; (gemini-3.1-pro was not a valid id)
   - name: openai
     models:
       - id: gpt-4o-mini
@@ -15,11 +15,11 @@ routing:
     # Low-latency, low-cost tasks like simple intent extraction
     - name: cost_optimized
       description: "Optimized for speed and cost. Suitable for simple NLU and routing tasks."
-      default_model: gemini-2.5-flash
+      default_model: gemini-3.5-flash-lite
       fallback_model: gpt-4o-mini
 
     # High-stakes, complex tasks requiring maximum reasoning
     - name: quality_optimized
       description: "Optimized for reasoning and quality. Used for complex summarization and final response generation."
-      default_model: gemini-2.5-pro
+      default_model: gemini-3.8-flash
       fallback_model: gpt-4o

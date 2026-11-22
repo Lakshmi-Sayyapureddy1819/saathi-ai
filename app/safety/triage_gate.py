@@ -1,15 +1,19 @@
-﻿
+
 import re
 import logging
 from typing import Tuple, Dict
 
+from app.observability.redact import redact
+
 # --- Mock Twilio Dispatcher ---
 def dispatch_emergency_sms(member_id: str, details: str):
-    """Mocks a Twilio API call to dispatch an emergency SMS."""
-    print(f"\n\033[91mðŸš¨ [SAFETY GATE] RED CRISIS INTERCEPTED FOR {member_id} ðŸš¨\033[0m")
-    print(f"\033[93m   [TWILIO OUTBOUND SMS] -> Emergency Contacts\033[0m")
-    print(f"\033[90m   [DETAILS] {details}\033[0m\n")
-    logging.critical(f"Emergency SMS dispatched for member {member_id}. Details: {details}")
+    """Mocks a Twilio API call to dispatch an emergency SMS.
+
+    PRIVACY: `details` must never contain the member's own words (health data). Callers pass the crisis category
+    and `redact(user_text)` (length + opaque per-process tag), which is enough to correlate and triage.
+    """
+    alert = f"[SAFETY GATE] RED CRISIS for member {member_id} -> emergency contacts notified ({details})"
+    logging.critical("Emergency SMS dispatched: %s", alert)
     return {"status": "sms_dispatched", "details": details}
 
 # --- Compiled Regex for RED_CRISIS Flags ---
@@ -46,8 +50,9 @@ PATTERNS_YELLOW_WARNING = {
     "DIAGNOSIS_REQUEST": re.compile(
         r"\b("
         r"do\s+i\s+(?:have|got|hav)\b"
+        r"|(?:if|whether)\s+i\s+(?:have|got|am\s+suffering\s+from)\b"
         r"|am\s+i\s+(?:suffering\s+from|diabetic|sick|ill|dying)"
-        r"|(?:is|could|might|can)\s+(?:this|it|that)\s+(?:be|mean|a\s+sign\s+of)\s+(?:a\s+|an\s+)?"
+        r"|(?:is|could|might|can)\s+(?:this|it|that)\s+(?:(?:be|mean|a\s+sign\s+of)\s+)?(?:a\s+|an\s+)?"
         r"(?:cancer|diabetes|diabetic|malaria|dengue|thyroid|typhoid|covid|tb|tumou?r|infection|disease|heart)"
         r"|what\s+(?:disease|illness|condition)\s+do\s+i\s+have"
         r"|what(?:'s|\s+is)\s+wrong\s+with\s+me"
@@ -75,7 +80,7 @@ def evaluate_safety_gate(user_text: str, member_id: str = "MEM_UNKNOWN") -> Tupl
     for crisis_type, pattern in COMPILED_RED_FLAGS.items():
         if pattern.search(user_text):
             logging.warning(f"RED_CRISIS Triggered: {crisis_type} for member {member_id}")
-            dispatch_emergency_sms(member_id, f"User text triggered {crisis_type}: '{user_text}'")
+            dispatch_emergency_sms(member_id, f"{crisis_type}; message {redact(user_text)}")
             return (False, "RED_CRISIS", HELPLINE_PAYLOAD)
 
 

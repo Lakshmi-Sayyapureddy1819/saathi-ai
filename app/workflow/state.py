@@ -35,6 +35,9 @@ class BookingDraft(BaseModel):
     selected_slot: Optional[str] = None
     verbal_confirmed: bool = False
     attempt_count: int = 0
+    # Package disambiguation: ids we listed to the user, and a time they gave before choosing a package.
+    candidate_package_ids: List[str] = Field(default_factory=list)
+    pending_slot_text: Optional[str] = None
 
 
 class TriageStatus(BaseModel):
@@ -77,5 +80,7 @@ class UserSessionState(BaseModel):
     triage_status: TriageStatus = Field(default_factory=TriageStatus)
     emergency_payload: Optional[EmergencyPayload] = None
     trace_id: Optional[str] = None
+    handoff_ticket: Optional[str] = None
+    yellow_reply: Optional[str] = None  # deterministic no-diagnosis reply for the current turn
     turn_history: List[Turn] = Field(default_factory=list)
     grounding_mode: GroundingMode = Field(default_factory=GroundingMode)

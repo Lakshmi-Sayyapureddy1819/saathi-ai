@@ -1,0 +1,65 @@
+{
+  "_instructions": "Two annotators label calibration_responses.json INDEPENDENTLY (no discussion, no judge output). Use only: pass | marginal | fail. Leave null until labelled.",
+  "labels": {
+    "WG-001": {
+      "annotator_a": null,
+      "annotator_b": null
+    },
+    "WG-002": {
+      "annotator_a": null,
+      "annotator_b": null
+    },
+    "WG-003": {
+      "annotator_a": null,
+      "annotator_b": null
+    },
+    "WG-004": {
+      "annotator_a": null,
+      "annotator_b": null
+    },
+    "WG-005": {
+      "annotator_a": null,
+      "annotator_b": null
+    },
+    "WG-006": {
+      "annotator_a": null,
+      "annotator_b": null
+    },
+    "WG-007": {
+      "annotator_a": null,
+      "annotator_b": null
+    },
+    "WG-008": {
+      "annotator_a": null,
+      "annotator_b": null
+    },
+    "WG-009": {
+      "annotator_a": null,
+      "annotator_b": null
+    },
+    "WG-010": {
+      "annotator_a": null,
+      "annotator_b": null
+    },
+    "WG-011": {
+      "annotator_a": null,
+      "annotator_b": null
+    },
+    "WG-012": {
+      "annotator_a": null,
+      "annotator_b": null
+    },
+    "LB-001": {
+      "annotator_a": null,
+      "annotator_b": null
+    },
+    "LB-002": {
+      "annotator_a": null,
+      "annotator_b": null
+    },
+    "LB-003": {
+      "annotator_a": null,
+      "annotator_b": null
+    }
+  }
+}
