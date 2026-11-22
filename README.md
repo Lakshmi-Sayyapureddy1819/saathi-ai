@@ -155,7 +155,9 @@ separate:
 3. `run_evals` only *reads* the frozen set (verifying its hash) and judges those exact responses. It never regenerates
    or rewrites them; a tampered or missing hash is reported as an integrity failure instead of being trusted.
 
-Until 15 complete label pairs exist, kappa is reported as N/A. Do not label with an LLM and do not edit labels after
+Label with `python -m evaluations.label_calibration` (add `--annotator b` for a second person): it shows each case
+without any judge output, saves after every answer and can be resumed. One annotator is enough for the judge-vs-human
+kappa; the inter-annotator row needs both. Until 15 labels exist for the relevant annotator(s), kappa is reported as N/A. Do not label with an LLM and do not edit labels after
 seeing judge output. If the agent changes materially, start a *new* calibration round rather than replacing a labelled
 set.
 

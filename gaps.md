@@ -46,8 +46,8 @@ Done in the repo: model mixes, incident drill, prompt iterations, PLAN.md graph,
 Mode A/B recommendation, AI_USAGE overruling example (section 3b).
 
 Only you can do these:
-1. **Hand-label the 15 calibration responses** in `evaluations/datasets/human_labels.json`, then run
-   `python -m evaluations.run_evals`. An earlier AI-generated labelling was reverted: it is not human calibration.
+1. **Hand-label the 15 calibration responses**: run `python -m evaluations.label_calibration` (about 15 min), then
+   `python -m evaluations.run_evals --promote`. An earlier AI-generated labelling was reverted: it is not human calibration.
 2. **Rotate the exposed Gemini key**, and add the measured runtime spend (<= INR 500) to the README.
 3. **Record the 5-8 min video**, with Langfuse UI screenshots (drill trace, one LLM generation span).
 4. **Commit and push** to a public repo (nothing is committed yet). Optionally delete `scripts/archive_patches`,
