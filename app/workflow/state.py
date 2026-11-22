@@ -84,3 +84,4 @@ class UserSessionState(BaseModel):
     yellow_reply: Optional[str] = None  # deterministic no-diagnosis reply for the current turn
     turn_history: List[Turn] = Field(default_factory=list)
     grounding_mode: GroundingMode = Field(default_factory=GroundingMode)
+    reply_lang: Literal["en", "hinglish"] = "en"  # language of deterministic replies; follows what the member types

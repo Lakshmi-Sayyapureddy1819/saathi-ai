@@ -4,6 +4,7 @@ import logging
 from typing import Tuple, Dict
 
 from app.observability.redact import redact
+from app.workflow.replies import MSG
 
 # --- Mock Twilio Dispatcher ---
 def dispatch_emergency_sms(member_id: str, details: str):
@@ -21,24 +22,36 @@ def dispatch_emergency_sms(member_id: str, details: str):
 # Using re.IGNORECASE for broader matching.
 
 COMPILED_RED_FLAGS = {
-    # Cardiac / Stroke
+    # Cardiac / Stroke. Common misspellings and Hinglish spellings are listed explicitly (no fuzzy matching in the
+    # safety gate: every accepted variant is visible here and covered by tests/test_red_flag_variants.py).
     "CARDIAC_EMERGENCY": re.compile(
-        r'\b(chest\s*(pain|tightness|pressure)|heart\s*attack|stroke|left\s*arm\s*pain|seene\s*mein\s*(dard|jalan|dabav)|dil\s*ka\s*daura|radiating\s*pain)\b',
+        r"\b((?:chest|chst|chesst|cheast)\s*(?:pain|pian|pane|paine|tightness|pressure|heaviness)|(?:heart|hart)\s*attac?k|"
+        r"stroke|lakwa|left\s*arm\s*pain|(?:seene|sine|seeney)\s*(?:mein|me|main|mei)\s*(?:dard|jalan|dabav|dabaav|bhaari|bhari)|"
+        r"(?:dil|dill)\s*ka\s*(?:daura|dora)|radiating\s*pain)\b",
         re.IGNORECASE
     ),
     # Respiratory / Syncope
     "RESPIRATORY_SYNCOPE_EMERGENCY": re.compile(
-        r"\b(breathless|shortness\s*of\s*breath|cannot\s*breathe|can'?t\s*breathe|saans\s*(phool|nahi|ruk|lene\s*mein\s*takleef)|faint|unconscious|behosh|chakkhar|collapsed|not\s*breathing)\b",
+        r"\b(breathless(?:ness)?|short(?:ness)?\s*of\s*breath|cannot\s*breat?he|can'?t\s*breat?he?|"
+        r"(?:difficulty|trouble|struggling|hard)\s*(?:to\s*|in\s*)?breath(?:e|ing)|gasping|"
+        r"(?:saans|sans|saas)\s*(?:phool|nahi|ruk|lene\s*mein\s*takleef)|(?:dum|dam)\s*ghut|"
+        r"faint(?:ed|ing)?|pass(?:ed|ing)?\s*out|unconscious|behosh(?:i)?|chakkhar|collapsed|not\s*breathing)\b",
         re.IGNORECASE
     ),
     # Acute Self-Harm / Suicidal Ideation
     "SELF_HARM_EMERGENCY": re.compile(
-        r'\b(suicid|kill\s*myself|end\s*my\s*life|want\s*to\s*die|marna\s*chahta|khudkushi|jaan\s*dena|harm\s*myself|nuksan\s*pahuncha|marne\s*ka\s*mann|nuksan\s*karna)\b',
+        r"\b(suicid(?:e|al)?|sucide|suiside|kill\s*my\s*self|end\s*my\s*life|end\s*it\s*all|want\s*to\s*die|"
+        r"(?:don'?t|dont|do\s*not)\s*want\s*to\s*(?:live|be\s*alive)|no\s*reason\s*to\s*live|"
+        r"marna\s*chaht[ai]|mar\s*jan[ae]\s*chaht[ai]|jeena\s*nahi\s*chaht[ai]|jeene\s*ka\s*mann\s*nahi|"
+        r"zindagi\s*khatam|aatmahatya|khudkushi|jaan\s*dena|harm\s*myself|nuksan\s*pahuncha|marne\s*ka\s*mann|nuksan\s*karna)\b",
         re.IGNORECASE
     ),
-    # Severe Hemorrhage / Vomiting Blood
+    # Severe Hemorrhage / Vomiting Blood. "khoon" alone is an emergency word, EXCEPT when it is plainly a lab request
+    # ("khoon ki jaanch", "khoon ka test"), which is how members ask for a blood test in Hinglish.
     "HEMORRHAGE_EMERGENCY": re.compile(
-        r'\b(bleeding\s*heavily|coughing\s*blood|vomit.*blood|blood.*vomit|khoon|vomiting\s*blood|khoon\s*ki\s*ulti|uncontrolled\s*bleeding|severe\s*bleeding|heavy\s*blood\s*loss)\b',
+        r"\b(bleeding\s*(?:heavily|badly|profusely|a\s*lot)|coughing\s*blood|vomit.*blood|blood.*vomit|"
+        r"khoon(?!\s*(?:ki|ka|ke)\s*(?:jaanch|janch|test|report|checkup|check)\b)|vomiting\s*blood|khoon\s*ki\s*ulti|"
+        r"uncontrolled\s*bleeding|severe\s*bleeding|heavy\s*blood\s*loss)\b",
         re.IGNORECASE
     )
 }
@@ -67,7 +80,8 @@ PATTERNS_YELLOW_WARNING = {
 
 # --- National Helpline Information ---
 HELPLINE_PAYLOAD = {
-    "message": "It sounds like you are in a serious situation. Please contact emergency services immediately.",
+    # Wording lives in app/workflow/replies.py (English + Hinglish). The red-flag detection above is untouched.
+    "message": MSG["emergency"][0],
     "helplines": {
         "National Emergency Number": "112",
         "Medical Helpline": "108",

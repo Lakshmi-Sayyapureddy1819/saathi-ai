@@ -143,13 +143,17 @@ def match_slot(text: str, slots: List[str]) -> SlotMatch:
     return SlotMatch(status="none")
 
 
-_CONFIRM = re.compile(r"\b(yes|yep|yeah|confirm(?:ed)?|proceed|go\s+ahead|haan|han|ha|sahi\s+hai|theek\s+hai|book\s+it)\b", re.I)
-_NEGATE = re.compile(r"\b(no|nahi|nahin|don'?t|do\s+not|cancel|stop|wait|not\s+yet)\b", re.I)
+_CONFIRM = re.compile(r"\b(ye+s+|yep|yea+h*|yup|confirm(?:ed)?|proceed|go\s+ahead|haan|haa+n?|han|hanji|ha|"
+                      r"ji\s+haan|haan\s+ji|sahi\s+hai|theek\s+hai|thik\s+hai|book\s+it|kar\s*do|kardo)\b", re.I)
+# A bare "ok"/"sure"/"ji" is only a yes when it is the whole message ("okay maybe" must not book anything).
+_CONFIRM_ONLY = re.compile(r"^\s*(ok+|okay|sure|done|ji|book\s+kar\s*do)\s*[.!]*\s*$", re.I)
+_NEGATE = re.compile(r"\b(no|nahi|nahin|don'?t|do\s+not|cancel|stop|wait|not\s+yet|ruko|mat|rehne\s+do|rahne\s+do|"
+                     r"chhodo|chodo)\b", re.I)
 
 
 def is_confirmation(text: str) -> bool:
     """Explicit yes only. Whole-word match; any negation vetoes (so 'ok' inside 'book' never counts)."""
-    return bool(_CONFIRM.search(text)) and not _NEGATE.search(text)
+    return (bool(_CONFIRM.search(text)) or bool(_CONFIRM_ONLY.match(text))) and not _NEGATE.search(text)
 
 
 def resolve_date(text: str, today: Optional[date] = None) -> date:

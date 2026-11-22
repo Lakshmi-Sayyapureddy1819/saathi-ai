@@ -115,7 +115,7 @@ def get_grounding(query: str, session: UserSessionState, trace_id: Optional[str]
     trace_id = trace_id or new_trace_id()
     engine = engine or GroundingEngine()
     mode = session.grounding_mode.mode
-    with span(f"grounding:{mode}", trace_id, kind="tool", mode=mode) as s:
+    with span(f"grounding:{mode}", trace_id, kind="tool", mode=mode, input=query) as s:
         if mode == "mode_a_rag":
             ctx = engine.mode_a_retrieval(query)
         elif mode == "mode_b_facts":
@@ -123,4 +123,5 @@ def get_grounding(query: str, session: UserSessionState, trace_id: Optional[str]
         else:
             raise ValueError(f"Invalid grounding mode: {mode}")
         s.set(n_sources=len(ctx.sources), empty=ctx.empty, context_chars=len(ctx.text))
+        s.set_output({"sources": [str(x) for x in ctx.sources], "empty": ctx.empty})
         return ctx

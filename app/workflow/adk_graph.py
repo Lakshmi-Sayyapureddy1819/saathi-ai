@@ -170,9 +170,11 @@ class AdkSaathi:
             cur = dict(stored.state["session"])
             cur["trace_id"] = session.trace_id
             delta["session"] = cur
-        with span("turn", session.trace_id, kind="root", engine="adk", session_id=session.session_id):
+        with span("turn", session.trace_id, kind="root", engine="adk", session_id=session.session_id,
+                  member_id=session.member.member_id, channel=session.channel, input=user_text) as s:
             msg = genai_types.Content(role="user", parts=[genai_types.Part(text=user_text)])
             res = await self._drive(session, msg, delta)
+            s.set_output(res.response)
         flush()
         return res
 

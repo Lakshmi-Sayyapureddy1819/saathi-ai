@@ -25,6 +25,7 @@ from app.safety.triage_gate import evaluate_safety_gate
 from app.tools.lab_tools import LabTools
 from app.tools.slots import match_slot, is_confirmation, resolve_date, has_time
 from app.workflow.model_client import ModelClient
+from app.workflow.replies import detect_lang, say
 from app.workflow.state import (
     UserSessionState, TriageStatus, TriageLevel, MemberProfile, BookingDraft, EmergencyPayload, Turn,
 )
@@ -36,13 +37,28 @@ NodeFn = Callable[[str, UserSessionState], Tuple[str, UserSessionState]]
 COACH_TRIGGERS = re.compile(r"\b(yoga|diet|food|lifestyle|pranayama|breathing|kriya|meditation|asana|namaskar|"
                             r"kapalbhati|anulom|vilom|fayde|thakan|stress|sleep)\b", re.I)
 LAB_TRIGGERS = re.compile(r"\b(book|booking|slot|slots|schedule|appointment|blood\s+test|lab|package|checkup|"
-                          r"test|panel|karwana)\b|\bLP_\d+\b", re.I)
+                          r"test|panel|karwana|karvana|karwani|jaanch|janch|check\s*-?\s*up)\b|\bLP_\d+\b", re.I)
 
 
-CANCEL_OR_CHANGE = re.compile(r"\b(cancel|stop|never\s*mind|forget\s+it|change|different|another|reschedule|not\s+yet|wait|hold\s+on)\b", re.I)
-_CANCEL = re.compile(r"\b(cancel|stop|never\s*mind|forget\s+it)\b", re.I)
+CANCEL_OR_CHANGE = re.compile(r"\b(cancel|stop|never\s*mind|forget\s+it|change|different|another|reschedule|not\s+yet|"
+                              r"wait|hold\s+on|ruko|rehne\s+do|rahne\s+do|chhodo|chodo|mat\s+karo)\b", re.I)
+_CANCEL = re.compile(r"\b(cancel|stop|never\s*mind|forget\s+it|rehne\s+do|rahne\s+do|chhodo|chodo|mat\s+karo)\b", re.I)
 _CHANGE = re.compile(r"\b(change|different|another|reschedule|instead)\b", re.I)
-_DATE_WORD = re.compile(r"\b(today|aaj|tomorrow|kal|parso|day\s+after\s+tomorrow)\b", re.I)
+_EXPLICIT_CLOCK = re.compile(r"\d\s*(am|pm|baje|bje|o'?clock)\b|\b\d{1,2}:\d{2}\b", re.I)
+_BOOKING_ID = re.compile(r"\bBOK_[A-Za-z0-9_]+\b", re.I)
+_BOOKING_STR = re.compile(r"^(?P<id>\S+) - (?P<pkg>.+) on (?P<date>\d{4}-\d{2}-\d{2}) (?P<slot>.+)$")
+_DATE_WORD =re.compile(r"\b(today|aaj|tomorrow|kal|parso|day\s+after\s+tomorrow)\b", re.I)
+
+
+def active_bookings(session: UserSessionState, tools: LabTools) -> list:
+    """This session's confirmed bookings that still exist in the schedule backend (cancelled ones are gone).
+    Seed history from members.json is not in this form and is never listed or cancellable."""
+    out = []
+    for rec in session.member.past_bookings:
+        m = _BOOKING_STR.match(rec)
+        if m and (b := tools.get_booking(m["id"], session.member.member_id)) is not None:
+            out.append(b)
+    return out
 
 
 def _load_prompt(name: str) -> str:
@@ -85,8 +101,12 @@ class WorkflowGraph:
             raise ValueError(f"Node '{node_name}' not found in graph.")
         session.next_node = None  # a node that wants a successor sets this; None ends the turn
         with span(node_name, self._tid(session), kind="node", member_id=session.member.member_id,
-                  channel=session.channel, session_id=session.session_id, prompt_version=PROMPT_VERSION):
-            return self.nodes[node_name](user_text, session)
+                  channel=session.channel, session_id=session.session_id, prompt_version=PROMPT_VERSION,
+                  input=user_text) as s:
+            result = self.nodes[node_name](user_text, session)
+            if isinstance(result, tuple) and result and isinstance(result[0], str):
+                s.set_output(result[0])
+            return result
 
     def _goto(self, node_name: str, user_text: str, session: UserSessionState) -> Tuple[Optional[str], UserSessionState]:
         """Chain mode: run the successor now. Step mode: record it in session.next_node and stop."""
@@ -99,6 +119,7 @@ class WorkflowGraph:
     def triage(self, user_text: str, session: UserSessionState) -> TriageLevel:
         """Deterministic safety check. Records triage status (and emergency payload) on the session."""
         session.yellow_reply = None  # per-turn only: never let a previous turn's canned reply linger in state
+        session.reply_lang = detect_lang(user_text, session.reply_lang)
         is_safe, status, payload = evaluate_safety_gate(user_text, session.member.member_id)
         session.triage_status = TriageStatus(status=status)
         if not is_safe:
@@ -121,7 +142,11 @@ class WorkflowGraph:
 
     def node_emergency(self, user_text: str, session: UserSessionState) -> Tuple[str, UserSessionState]:
         p = session.emergency_payload or EmergencyPayload()
-        lines = [p.message, "Helplines:"] + [f"- {n}: {num}" for n, num in p.helplines.items()]
+        lang = session.reply_lang
+        if lang == "hinglish":  # same deterministic helplines, Hinglish wording
+            p = p.model_copy(update={"message": say(lang, "emergency")})
+            session.emergency_payload = p
+        lines = [p.message, say(lang, "helplines")] + [f"- {n}: {num}" for n, num in p.helplines.items()]
         session.active_node = "node_emergency"
         session.booking_draft = BookingDraft()
         return "\n".join(lines), session
@@ -157,14 +182,22 @@ class WorkflowGraph:
                            or bool(_DATE_WORD.search(user_text)))        # so does a bare "today" / "kal"
         # We asked "which package?": any reply is an answer unless it is clearly a wellness question.
         awaiting_package = (session.active_node == "node_lab_booking" and bool(session.booking_draft.candidate_package_ids))
+        if re.search(r"\bcancel\b", user_text, re.I) and (
+                _BOOKING_ID.search(user_text) or (not in_booking and not awaiting_package
+                                                  and active_bookings(session, self.lab_tools))):
+            return "node_lab_booking"  # cancelling a CONFIRMED booking (the draft flow handles a pending one)
         if awaiting_package and not (has_coach and not has_lab):
             return "node_lab_booking"
-        if in_booking and (has_lab or slot_or_confirm) and not (has_coach and not has_lab):
-            return "node_lab_booking"  # mid-booking turn stays in booking
+        if in_booking and not (has_coach and not has_lab):
+            # Mid-booking, anything that is not clearly a wellness question stays in the booking and gets a gentle
+            # re-prompt ("okay maybe", "hmm", a typo), instead of silently dropping the member's draft.
+            return "node_lab_booking"
         if has_coach and not has_lab:
             return "node_program_coach"
         if has_lab and not has_coach:
             return "node_lab_booking"
+        if not has_coach and self.lab_tools.mentions_test(user_text):
+            return "node_lab_booking"  # "thyroid", "sugar", "dengue": naming a test is enough, no verb needed
         return self._llm_route(user_text, self._tid(session))
 
     @staticmethod
@@ -190,8 +223,7 @@ class WorkflowGraph:
             return cached, session
         ctx = get_grounding(user_text, session, tid, self.engine)
         if ctx.empty:
-            return ("I don't have that in our program library. I can connect you with a care coordinator "
-                    "or help you book a lab package."), session
+            return say(session.reply_lang, "coach_empty"), session
         prompt = _load_prompt("coach_prompt.txt").format(context=ctx.text, user_query=_sanitize(user_text))
         try:
             res = self.model_client.generate(prompt, tid)
@@ -205,7 +237,7 @@ class WorkflowGraph:
     def node_human_handoff(self, user_text: str, session: UserSessionState) -> Tuple[str, UserSessionState]:
         session.active_node = "node_human_handoff"
         session.booking_draft = BookingDraft()
-        return "I'm connecting you with a care coordinator who will follow up shortly.", session
+        return say(session.reply_lang, "handoff"), session
 
     @staticmethod
     def _option_lines(packages: list, cap: int = 5) -> str:
@@ -233,6 +265,7 @@ class WorkflowGraph:
         """Steps 1-3 (package, slot, explicit confirmation). Returns (reply, session, ready_to_book)."""
         tid = self._tid(session)
         session.active_node = "node_lab_booking"
+        lang = session.reply_lang
         d = session.booking_draft
         text = _sanitize(user_text)
 
@@ -242,9 +275,9 @@ class WorkflowGraph:
         #    fresh search (searching "10:30 AM" or "female" against the catalogue is what lost the context).
         if not d.package_id:
             pool = [p for pid in d.candidate_package_ids if (p := self.lab_tools.get_package(pid))]
-            if pool and re.search(r"\b(cancel|stop|never\s*mind|forget\s+it)\b", text, re.I):
+            if pool and _CANCEL.search(text):
                 session.booking_draft = BookingDraft()
-                return "Okay, I've cancelled that. Anything else I can help with?", session, False
+                return say(lang, "cancelled_pick"), session, False
             if pool:
                 sel = self.lab_tools.select_package(text, pool, tid)
                 if sel.status == "selected":
@@ -261,8 +294,7 @@ class WorkflowGraph:
                         tries = d.attempt_count + 1
                         if tries >= 3:
                             session.booking_draft = BookingDraft()
-                            return ("I'm having trouble working out which package you mean, so let's start over. "
-                                    "Which test would you like?"), session, False
+                            return say(lang, "start_over"), session, False
                         upd: dict = {"attempt_count": tries}
                         if sel.status == "ambiguous" and sel.matches:
                             pool = sel.matches  # narrow the question to the genuine ties
@@ -271,11 +303,9 @@ class WorkflowGraph:
                             upd["pending_slot_text"] = text  # remember the time; don't ask for it again
                         session.booking_draft = d = d.model_copy(update=upd)
                         lines = self._option_lines(pool)
-                        lead = ("Noted the time. " if d.pending_slot_text else
-                                ("Those fit more than one package. " if sel.status == "ambiguous"
-                                 else "I didn't recognise that as one of the options. "))
-                        return (f"{lead}Which package is it for?\n{lines}\n"
-                                "Reply with the name or the ID (e.g. " + pool[0].package_id + ")."), session, False
+                        lead = say(lang, "lead_time" if d.pending_slot_text else
+                                   ("lead_ambiguous" if sel.status == "ambiguous" else "lead_unknown"))
+                        return say(lang, "which_package", lead=lead, lines=lines, example=pool[0].package_id), session, False
             if not d.package_id:
                 results = self.lab_tools.search_packages(text, trace_id=tid)
                 if not results and self.lab_tools.is_generic_request(text):
@@ -285,17 +315,15 @@ class WorkflowGraph:
                     session.booking_draft = d = d.model_copy(update={
                         "candidate_package_ids": [p.package_id for p in everything],
                         "pending_slot_text": text if self._gave_time(text) else None, "attempt_count": 0})
-                    return ("Which test would you like to book? For example:\n" + self._option_lines(everything)
-                            + "\nYou can also tell me a symptom."), session, False
+                    return say(lang, "ask_test", lines=self._option_lines(everything)), session, False
                 if not results:
-                    return "I couldn't find a lab package matching that. Could you tell me the test name?", session, False
+                    return say(lang, "none_found"), session, False
                 if len(results) > 1:
                     session.booking_draft = d = d.model_copy(update={
                         "candidate_package_ids": [r.package_id for r in results[:5]],
                         "pending_slot_text": text if self._gave_time(text) else None, "attempt_count": 0})
                     lines = [f"- {r.name} ({r.package_id})" for r in results[:5]]
-                    return ("I found a few matching packages:\n" + "\n".join(lines)
-                            + "\nWhich one would you like?"), session, False
+                    return say(lang, "few_found", lines="\n".join(lines)), session, False
                 session.booking_draft = d = d.model_copy(update={"package_id": results[0].package_id,
                                                                   "package_name": results[0].name})
 
@@ -312,37 +340,43 @@ class WorkflowGraph:
         if not d.selected_slot:
             if _CANCEL.search(text):
                 session.booking_draft = BookingDraft()
-                return "Okay, I've cancelled that booking. Anything else I can help with?", session, False
+                return say(lang, "cancelled_booking"), session, False
             # An explicit day word ("today", "kal") overrides the date stored earlier; otherwise keep it.
             day = resolve_date(slot_text) if _DATE_WORD.search(slot_text) else (d.selected_date or resolve_date(slot_text))
             avail = self.lab_tools.check_slots(d.package_id, day, tid)
             if not avail.slots:
                 session.booking_draft = BookingDraft()
-                return "Sorry, no slots are available for that package on that day. Please try another day or package.", session, False
+                return say(lang, "no_slots"), session, False
             m = match_slot(slot_text, avail.slots)
             if m.status == "matched":
                 session.booking_draft = d = d.model_copy(update={"selected_slot": m.slot, "selected_date": day})
-                return (f"Just to confirm: {d.package_name} on {day:%A, %d %B %Y} at {d.selected_slot}. "
-                        "Shall I go ahead and book it? (yes/no)"), session, False
+                return say(lang, "confirm_q", pkg=d.package_name, day=f"{day:%A, %d %B %Y}", slot=d.selected_slot), session, False
             session.booking_draft = d = d.model_copy(update={"selected_date": day})
-            prefix = "I couldn't pin down that time. " if m.status == "ambiguous" else ""
-            return (f"{prefix}Available slots for {d.package_name} on {day:%A, %d %B %Y}:\n- "
-                    + "\n- ".join(avail.slots) + "\nPlease choose a time."), session, False
+            if m.status == "ambiguous":
+                prefix = say(lang, "slot_unclear")
+            elif m.status == "none" and _EXPLICIT_CLOCK.search(slot_text):
+                pkg = self.lab_tools.get_package(d.package_id)  # they gave a clock time we can't offer
+                prefix = say(lang, "slot_unavailable_fasting" if pkg and pkg.fasting_required else "slot_unavailable")
+            else:
+                prefix = ""
+            return say(lang, "slots_list", prefix=prefix, pkg=d.package_name, day=f"{day:%A, %d %B %Y}",
+                       slots="- " + "\n- ".join(avail.slots)), session, False
 
         # 3. Explicit confirmation (whole-word yes; negation vetoes)
         if not d.verbal_confirmed:
-            if re.search(r"\b(no|nahi|nahin|cancel|stop)\b", text, re.I):
+            if re.search(r"\b(no|nahi|nahin|cancel|stop)\b", text, re.I) or _CANCEL.search(text):
                 session.booking_draft = BookingDraft()
-                return "Okay, I've cancelled that booking. Anything else I can help with?", session, False
+                return say(lang, "cancelled_booking"), session, False
             if not is_confirmation(text):
-                return (f"I have {d.package_name} on {d.selected_date:%d %B %Y} at {d.selected_slot}. "
-                        "Please say 'yes' to confirm or 'no' to cancel."), session, False
+                return say(lang, "reconfirm", pkg=d.package_name, date=f"{d.selected_date:%d %B %Y}",
+                           slot=d.selected_slot), session, False
             session.booking_draft = d = d.model_copy(update={"verbal_confirmed": True})
         return "", session, True
 
     def booking_execute(self, user_text: str, session: UserSessionState) -> Tuple[str, UserSessionState]:
         """Step 4 (the protected action): book with tool-level retries; hand off when exhausted."""
         tid = self._tid(session)
+        lang = session.reply_lang
         d = session.booking_draft
         result = self.lab_tools.book_test(d.package_id, session.member.member_id, d.selected_slot,
                                           d.selected_date, trace_id=tid)
@@ -351,13 +385,15 @@ class WorkflowGraph:
             session.member = session.member.model_copy(
                 update={"past_bookings": [*session.member.past_bookings, record]})
             session.booking_draft = BookingDraft()
-            return f"Booking confirmed! Your booking ID is {result.booking_id}.", session
+            return say(lang, "booked", id=result.booking_id), session
         if result.status == "booking_failed_needs_human_intervention":
             msg, session = self._goto("node_human_handoff", user_text, session)
             session.handoff_ticket = result.ticket_id
-            return f"{result.message} (Ticket {result.ticket_id}) {msg or ''}".strip(), session
+            return say(lang, "outage", ticket=result.ticket_id, handoff=msg or "").strip(), session
         session.booking_draft = BookingDraft()
-        return result.message or "Something went wrong with the booking.", session
+        if "taken" in (result.message or "").lower():
+            return say(lang, "slot_taken"), session
+        return (result.message if result.message and lang == "en" else say(lang, "booking_error")), session
 
     def resolve_handoff(self, session: UserSessionState, approved: bool, note: str = "") -> Tuple[str, UserSessionState]:
         """Apply a care coordinator's decision on a handed-off booking (deterministic).
@@ -367,18 +403,48 @@ class WorkflowGraph:
         so the member can pick another slot on the next turn.
         """
         ticket = session.handoff_ticket or "your ticket"
+        lang = session.reply_lang
         d = session.booking_draft
         if approved:
             session.booking_draft = BookingDraft()
             session.active_node = "node_human_handoff"
-            return f"A care coordinator approved {ticket} and will call you shortly. {note}".strip(), session
+            return say(lang, "approved", ticket=ticket, note=note).strip(), session
         session.booking_draft = BookingDraft(package_id=d.package_id, package_name=d.package_name) if d.package_id else BookingDraft()
         session.active_node = "node_lab_booking"
         session.handoff_ticket = None
-        return ("The coordinator couldn't complete that booking. " + (note + " " if note else "")
-                + "Would you like to choose a different time?"), session
+        return say(lang, "rejected", note=(note + " " if note else "")), session
+
+    def cancel_confirmed_booking(self, user_text: str, session: UserSessionState) -> Optional[str]:
+        """Cancel a confirmed booking, only on an explicit 'cancel <booking id>' (the UI button sends exactly that).
+        Without an id it lists what can be cancelled and asks. None = not a cancel-a-booking message."""
+        if not re.search(r"\bcancel\b", user_text, re.I):
+            return None
+        lang, tid = session.reply_lang, self._tid(session)
+        active = active_bookings(session, self.lab_tools)
+        ids = _BOOKING_ID.findall(user_text)
+        if not ids:
+            d = session.booking_draft
+            if d.package_id or d.candidate_package_ids or not active:
+                return None  # a pending draft (or nothing to cancel): the normal draft flow handles "cancel"
+            if len(active) == 1:
+                b = active[0]
+                return say(lang, "cancel_which_one", id=b.booking_id, pkg=b.package_name, date=str(b.date), slot=b.slot)
+            lines = "\n".join(f"- {b.booking_id}: {b.package_name}, {b.date} {b.slot}" for b in active)
+            return say(lang, "cancel_which_many", lines=lines)
+        want = next((b for b in active if b.booking_id.lower() == ids[0].lower()), None)
+        res = self.lab_tools.cancel_booking(want.booking_id, session.member.member_id, tid) if want else None
+        if res is None or res.status != "cancelled" or res.booking is None:
+            return say(lang, "cancel_not_found")
+        b = res.booking
+        session.member = session.member.model_copy(update={
+            "past_bookings": [r for r in session.member.past_bookings if not r.startswith(f"{b.booking_id} - ")]})
+        return say(lang, "cancel_done", id=b.booking_id, pkg=b.package_name, date=str(b.date), slot=b.slot)
 
     def node_lab_booking(self, user_text: str, session: UserSessionState) -> Tuple[str, UserSessionState]:
+        cancelled = self.cancel_confirmed_booking(user_text, session)
+        if cancelled is not None:
+            session.active_node = "node_lab_booking"
+            return cancelled, session
         reply, session, ready = self.booking_collect(user_text, session)
         if not ready:
             return reply, session
@@ -391,9 +457,11 @@ def execute_turn(user_text: str, session: UserSessionState, trace_id: Optional[s
     graph = graph or WorkflowGraph()
     session.trace_id = trace_id or new_trace_id()
     with span("turn", session.trace_id, kind="root", session_id=session.session_id,
-              member_id=session.member.member_id, channel=session.channel) as s:
+              member_id=session.member.member_id, channel=session.channel, prompt_version=PROMPT_VERSION,
+              input=user_text) as s:
         response, session = graph.run_node("node_safety_gate", user_text, session)
         s.set(final_node=session.active_node, triage=session.triage_status.status)
+        s.set_output(response)
     session.turn_history.append(Turn(user_text=user_text, response=response, node=session.active_node,
                                      trace_id=session.trace_id))
     flush()

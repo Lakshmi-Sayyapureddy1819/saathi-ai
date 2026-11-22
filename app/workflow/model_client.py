@@ -86,11 +86,12 @@ class ModelClient:
             if not model_id:
                 continue
             with span(f"llm:{model_id}", trace_id, kind="llm", model=model_id, route=node_name,
-                      prompt_chars=len(prompt)) as s:
+                      prompt_chars=len(prompt), input=prompt) as s:
                 try:
                     result = self._invoke(model_id, prompt)
                     s.set(prompt_tokens=result.prompt_tokens, completion_tokens=result.completion_tokens,
                           cost_usd=result.cost_usd, mock=result.mock)
+                    s.set_output(result.text)
                     if result.text:
                         return result
                 except Exception as e:
