@@ -17,6 +17,7 @@ SECURITY MODEL (read before exposing this anywhere)
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 import hmac
 import json
 import os
@@ -41,11 +42,13 @@ from app.api_schemas import (
     MemberPublic, MessageKind, PackageOption, ProgramSummary, SendMessageRequest, SessionCreated, SessionView,
 )
 from app.observability.tracer import flush, new_trace_id, span
+from app.grounding.semantic_cache import CacheStats, wellness_cache
+from app.workflow.model_client import LLMStatus, check_credentials, llm_status
 from app.tools.lab_tools import LabPackage
 from app.tools.slots import resolve_date
 from app.workflow.adk_graph import _GRAPH, AdkSaathi, ApprovalDecision
 from app.workflow.graph import active_bookings
-from app.workflow.state import BookingDraft, MemberProfile, UserSessionState
+from app.workflow.state import BookingDraft, MemberProfile, PendingCheckup, UserSessionState
 
 SESSION_TTL_S = int(os.getenv("SESSION_TTL_MINUTES", "120")) * 60
 MAX_SESSIONS = int(os.getenv("MAX_SESSIONS", "200"))
@@ -92,7 +95,14 @@ _engine = AdkSaathi()
 _records: Dict[str, SessionRecord] = {}
 _create_log: Deque[float] = deque()
 
-app = FastAPI(title="Saathi Care AI API", version="1.0")
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    """Fail loudly (in the log) at start if a configured provider key is rejected; never blocks or crashes startup."""
+    await asyncio.to_thread(check_credentials)
+    yield
+
+
+app = FastAPI(title="Saathi Care AI API", version="1.0", lifespan=_lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=_FRONTEND_ORIGINS, allow_methods=["GET", "POST", "DELETE"],
                    allow_headers=["Authorization", "Content-Type", "X-Coordinator-Token"])
 
@@ -217,6 +227,20 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/api/cache-status", response_model=CacheStats)
+def cache_status() -> CacheStats:
+    """Semantic-cache TTL, store (memory/redis), entries, hits, expirations and Redis errors. Never includes the Redis
+    URL (it can contain a password) or any cached text."""
+    return wellness_cache.stats()
+
+
+@app.get("/api/llm-status", response_model=LLMStatus)
+def llm_health() -> LLMStatus:
+    """Per-model ok/failed counts, last error, fallback usage and provider key status. Contains no secrets and no
+    message text."""
+    return llm_status()
+
+
 @app.get("/api/config", response_model=ConfigView)
 def config() -> ConfigView:
     return ConfigView(llm_configured=bool(os.getenv("GEMINI_API_KEY") or os.getenv("OPENAI_API_KEY")),
@@ -263,7 +287,8 @@ async def create_session(req: CreateSessionRequest) -> SessionCreated:
     member = MemberProfile(
         member_id=src["member_id"], name=src["name"], age=src["age"], language_pref=src.get("language_preference", "en-US"),
         enrolled_programs=list(src.get("enrolled_programs", [])), past_bookings=list(src.get("past_bookings", [])),
-        health_goals=list(src.get("health_goals", [])))
+        health_goals=list(src.get("health_goals", [])),
+        pending_checkups=[PendingCheckup(**c) for c in src.get("pending_checkups", [])])
     session = UserSessionState(channel="web", member=member, active_node="start", booking_draft=BookingDraft())
     rec = SessionRecord(session=session, token=secrets.token_urlsafe(32))
     _records[session.session_id] = rec
@@ -302,6 +327,8 @@ async def send_message(session_id: str, req: SendMessageRequest,
     if not _rate_ok(rec.sent, MSGS_PER_MINUTE):
         raise HTTPException(429, "You are sending messages too quickly.")
     async with rec.lock:  # one turn at a time per session
+        if req.channel:
+            rec.session.channel = req.channel
         rec.handoff = HandoffView()  # a previous decision banner is history once the member moves on
         before = len(rec.session.member.past_bookings)
         rec.add("user", req.text)

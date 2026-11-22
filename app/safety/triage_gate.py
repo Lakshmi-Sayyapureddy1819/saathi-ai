@@ -90,7 +90,35 @@ HELPLINE_PAYLOAD = {
     }
 }
 
-def evaluate_safety_gate(user_text: str, member_id: str = "MEM_UNKNOWN") -> Tuple[bool, str, Dict]:
+# --- Fast transactional/booking bypass for safety gate latency ---
+_TRANSACTIONAL_OR_SHORT = re.compile(
+    r"^(\s*("
+    r"yes(\s+confirm)?|confirm|haan|sure|ok|okay|yep|yup|done|fine|alright|"
+    r"no|nahi|nahin|cancel|stop|ruko|change(\s+time)?|reschedule|"
+    r"\d{1,2}(:\d{2})?\s*(am|pm|baje|bje|o'?clock)?|"
+    r"today|tomorrow|aaj|kal(\s+subah|\s+shaam)?|parso|day\s+after\s+tomorrow|subah|shaam|morning|evening|"
+    r"one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|thirty|forty|fifty|"
+    r"half\s+past\s+\w+|quarter\s+past\s+\w+|\w+\s+thirty|\w+\s+am|\w+\s+pm|"
+    r"lp_\d+|bok_\w+|the\s+\w+\s+one|thyroid|vitamin|cardiac|diabetic|package|test|blood\s+test|full\s+body|book\s+.*|"
+    r"hi|hello|hey|namaste|thanks|thank\s+you"
+    r")\s*)+$",
+    re.IGNORECASE,
+)
+
+SAFETY_PROMPT = """You are a medical safety classifier for a wellness app. 
+Analyze this user input: "{user_text}"
+Decide if it represents:
+- RED_CRISIS: acute medical emergency (severe chest pain, stroke, fainting, breathlessness, self-harm/suicide, heavy bleeding).
+- YELLOW_WARNING: user explicitly asking for a medical diagnosis, medical interpretation of symptoms, or asking "do I have X disease/condition".
+- GREEN_NORMAL: safe, e.g. booking a lab test, selecting a package name or time slot, or wellness question (yoga, diet, sleep). Note: mentioning a test name (e.g. "the thyroid one", "diabetes test") to book a test is GREEN_NORMAL, NOT a warning.
+
+Reply strictly with one of:
+RED_CRISIS
+YELLOW_WARNING
+GREEN_NORMAL
+"""
+
+def evaluate_safety_gate(user_text: str, member_id: str = "MEM_UNKNOWN", model_client: "ModelClient" = None) -> Tuple[bool, str, Dict]:
     # 1. Check for RED_CRISIS
     for crisis_type, pattern in COMPILED_RED_FLAGS.items():
         if pattern.search(user_text):
@@ -109,7 +137,30 @@ def evaluate_safety_gate(user_text: str, member_id: str = "MEM_UNKNOWN") -> Tupl
             }
             return (True, "YELLOW_WARNING", payload)
 
-    # 3. If no flags, it's GREEN_NORMAL
+    # Fast path: transactional booking, slot, confirmation or package selection does not need second-stage LLM
+    if _TRANSACTIONAL_OR_SHORT.match(user_text.strip()):
+        return (True, "GREEN_NORMAL", {"message": "Input is within normal operational parameters."})
+            
+    # 3. LLM second stage
+    if model_client:
+        prompt = SAFETY_PROMPT.format(user_text=user_text)
+        try:
+            llm_result = model_client.call_model(prompt).strip()
+            if "RED_CRISIS" in llm_result:
+                logging.warning(f"RED_CRISIS Triggered by LLM for member {member_id}")
+                dispatch_emergency_sms(member_id, f"LLM_ESCALATION; message {redact(user_text)}")
+                return (False, "RED_CRISIS", HELPLINE_PAYLOAD)
+            if "YELLOW_WARNING" in llm_result:
+                logging.info(f"YELLOW_WARNING Triggered by LLM for member {member_id}")
+                payload = {
+                    "message": "I understand you're looking for answers, but as an AI assistant, I can't provide a medical diagnosis. The best course of action is to get a proper diagnostic test. I can help you book a lab package that covers these symptoms. Would you like to see some options?",
+                    "action": "steer_to_diagnostics"
+                }
+                return (True, "YELLOW_WARNING", payload)
+        except Exception as e:
+            logging.error(f"LLM safety gate failed: {e}")
+
+    # 4. If no flags, it's GREEN_NORMAL
     return (True, "GREEN_NORMAL", {"message": "Input is within normal operational parameters."})
 
 # Example Usage:

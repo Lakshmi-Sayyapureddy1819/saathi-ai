@@ -20,6 +20,12 @@ dijiye kijiye karein sakta sakti raha rahi hoga hogi lagta lagti ka ke ki ko liy
 """.split())
 
 
+GREETING = re.compile(
+    r"^\s*(hi+|hello+|hey+|hiya|namaste|namaskar|good\s+(morning|afternoon|evening)|howdy)"
+    r"(\s+(there|saathi|team|ji))?\s*[!.?,]*\s*$", re.I)
+THANKS = re.compile(r"^\s*(thanks?|thank\s+you|thx|shukriya|dhanyavaad|dhanyawad)(\s+(a\s+lot|so\s+much|saathi|ji))?\s*[!.]*\s*$", re.I)
+
+
 def detect_lang(text: str, previous: Lang = "en") -> Lang:
     """Hinglish if any distinctive Hinglish word is present; English if the message is a clear English sentence
     (3+ words, none Hinglish); otherwise keep the previous language ("9:30 am", "yes" carry no language signal)."""
@@ -33,6 +39,14 @@ def detect_lang(text: str, previous: Lang = "en") -> Lang:
 
 # key -> (English, Hinglish). Placeholders use str.format. English strings are relied on by tests and the web UI.
 MSG: dict[str, tuple[str, str]] = {
+    "greeting": (
+        "Hello! 😊 I'm Saathi, your care companion. I can help with yoga, diet and lifestyle questions, "
+        "book a lab test, or connect you with a care coordinator. What would you like to do today?",
+        "Namaste! 😊 Main Saathi hoon, aapki care companion. Main yoga, diet aur lifestyle ke sawaalon mein, lab test "
+        "book karne mein, ya care coordinator se jodne mein madad kar sakti hoon. Aaj aap kya karna chahenge?"),
+    "thanks": (
+        "You're most welcome! Is there anything else I can help you with?",
+        "Aapka swagat hai! Kya aur kisi cheez mein madad chahiye?"),
     "coach_empty": (
         "I'm sorry, I couldn't find that in our program library. I'd be happy to connect you with a care "
         "coordinator or help you book a lab package.",
@@ -84,6 +98,13 @@ MSG: dict[str, tuple[str, str]] = {
                      "Maaf kijiye, samay theek se samajh nahi aaya. "),
     "slot_unavailable": ("I'm sorry, that time isn't available for this test. ",
                          "Maaf kijiye, yeh samay is jaanch ke liye available nahi hai. "),
+    "llm_down": (
+        "I'm sorry, my AI assistant isn't responding right now, so I can't put together a full answer. Here is what "
+        "our program library says:\n{context}\n\nPlease try again in a minute. I can still help you book a lab test, "
+        "or connect you with a care coordinator.",
+        "Maaf kijiye, abhi hamara AI assistant jawab nahi de pa raha, isliye poora jawab nahi bana paaye. Hamari "
+        "program library mein yeh likha hai:\n{context}\n\nKripya ek minute baad dobara koshish karein. Tab tak hum "
+        "lab test book karne mein ya care coordinator se jodne mein madad kar sakte hain."),
     "slot_unavailable_fasting": (
         "I'm sorry, that time isn't available for this test. It needs fasting, so slots are early in the morning. ",
         "Maaf kijiye, yeh samay is jaanch ke liye available nahi hai. Isme khaali pet rehna hota hai, isliye slots "
@@ -142,3 +163,22 @@ MSG: dict[str, tuple[str, str]] = {
 def say(lang: Lang, key: str, **kw: str) -> str:
     en, hi = MSG[key]
     return (hi if lang == "hinglish" else en).format(**kw)
+
+
+# ---- detectors: tests and evaluation scripts must not depend on exact wording ----------------------------------
+def _lead(key: str, i: int) -> str:
+    return MSG[key][i].split("{")[0].strip()[:60]
+
+
+def is_llm_down_reply(text: str) -> bool:
+    """True for the degraded reply shown when the model could not be reached (not a real model answer). Evaluation
+    scripts use this to count it as an ERROR instead of scoring it. Also matches the pre-rewording text."""
+    t = text.lstrip()
+    return t.startswith(_lead("llm_down", 0)) or t.startswith(_lead("llm_down", 1)) \
+        or t.startswith("Here is what our library says")
+
+
+def is_no_context_reply(text: str) -> bool:
+    """True for the 'not in our program library' reply (no retrieval hit, so no model answer was attempted)."""
+    t = text.lstrip()
+    return t.startswith(_lead("coach_empty", 0)) or t.startswith(_lead("coach_empty", 1)) or "I don't have" in t

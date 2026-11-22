@@ -26,6 +26,7 @@ class CreateSessionRequest(_Frozen):
 
 class SendMessageRequest(_Frozen):
     text: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_MESSAGE_CHARS)]
+    channel: Optional[Literal["web", "voice"]] = "web"
 
 
 class CoordinatorDecisionRequest(_Frozen):

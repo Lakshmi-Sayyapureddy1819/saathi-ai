@@ -4,6 +4,8 @@ Wellness-coach + lab-booking assistant with a deterministic safety gate, tool-ba
 handoff, tracing on every step, redacted logging and a measured evaluation harness. This repository is a prototype of
 the architecture described in `ARCHITECTURE.md` (which also lists what is *not* implemented).
 
+**Actual LLM Spend:** [FILL IN FINAL LLM SPEND HERE (<= INR 500)]
+
 ## Setup
 
 ```bash
@@ -32,6 +34,7 @@ Never commit `.env`. If a key has ever been printed in a log or URL, rotate it.
 python -m app.workflow.graph          # scripted demo: booking flow + emergency
 python interactive_chat.py            # chat in the terminal
 python voice_demo.py                  # simulated voice call: generic request -> which test? -> slot -> confirm -> booked
+python voice_demo.py --outbound       # outbound reminder call: agent phones a member about a pending checkup and books it
 ```
 
 Without API keys the app still runs: LLM calls return a clearly flagged `[MOCK:...]` response and are excluded from
@@ -64,6 +67,12 @@ Don't use `--reload` on Windows if you hit `WinError 10013`.
 | `FRONTEND_ORIGINS` | backend | CORS allow-list (default `http://localhost:5173,http://127.0.0.1:5173`) |
 | `COORDINATOR_TOKEN` | backend | shared secret for approve/reject; unset = endpoints return 503 |
 | `SESSION_TTL_MINUTES`, `MAX_SESSIONS`, `MESSAGES_PER_MINUTE`, `SESSIONS_PER_MINUTE` | backend | expiry and abuse limits (120 / 200 / 30 / 20) |
+
+**Model health:** the primary model is the first entry for each route in `config/models.yaml`; the fallback only runs when
+it fails. Every failed call records its reason on the span (`error`), is counted, and a call served by a fallback logs a
+warning. `GET /api/llm-status` shows per-model counts, the last error, `fallback_calls` and provider-key status (no
+secrets, no message text). At startup the backend asks each provider whether its key is accepted and logs
+`LLM credential check: <PROVIDER> key is rejected (HTTP 400)` if not.
 
 **Language and intent:** short, misspelled or everyday input is understood by intent ("shugar test", "throid", "bp check",
 "khoon ki jaanch"); deterministic replies follow the member's language (English or Roman-script Hinglish, chosen from
@@ -168,6 +177,19 @@ different-intent pairs up to 0.745, so no threshold separates them cleanly; 0.88
 (near-zero hits, zero wrong answers). Tune only with a labelled set of >=100 pairs. Mode B (member-specific) answers
 are never cached.
 
+**Time to live.** Every entry expires `SEMANTIC_CACHE_TTL_SECONDS` (default 3600; 0 = never) after it was stored, and an
+expired entry is never served. Entries are also namespaced by prompt version and embedding model, so changing the prompt
+(`SAATHI_PROMPT_VERSION`) or `EMBED_MODEL` starts with an empty cache instead of serving the old prompt's answers.
+
+**Redis (optional).** Set `REDIS_URL` (e.g. `redis://localhost:6379/0`) to share the cache across workers and restarts,
+with native key expiry (`SET ... EX`). Redis receives only the embedding and the generic answer, never the member's question
+text (a hash is the key); without an embedding (no Gemini key or an embedding outage) nothing goes to Redis. It fails open:
+a Redis error is counted and logged and the in-process cache is used for 30 s before reconnecting. Scaling limit: lookups
+scan at most 300 entries and compute cosine locally; beyond that use a vector index (RediSearch/HNSW).
+`GET /api/cache-status` reports TTL, store (`memory`/`redis`), entries, hits, expirations and Redis errors (never the URL).
+**Verification status:** tested against `fakeredis` (real Redis command semantics, including expiry). It has **not** been run
+against a real Redis server, because none was available; try it once with a real instance before relying on it.
+
 ## Observability
 
 Each user turn creates a root span; every node, tool call and LLM call is a child span carrying the same `trace_id`.
@@ -232,10 +254,14 @@ logged; a production deployment needs retention limits on both.
   cuts the speech when you tap the mic (barge-in) and shows time-to-first-audio. It is typecheck- and unit-tested
   (`toSpeakable`) but **not covered by an automated browser test and not yet measured on real speech**; hi-IN
   recognition quality depends on the browser. The eval figures below still come from the simulated path.
+- **Outbound reminder call (new):** `app/channels/outbound.py`. The call opens by naming the member's pending checkup
+  (`pending_checkups` in `data/members.json`, English or Hinglish), pre-fills the booking draft, and then every reply goes
+  through the normal workflow: safety gate and red-flag escalation first, then slot read-back and confirmation. A plain
+  "no" ends the call; "no, I have chest pain" still escalates. Dialling, STT and TTS are simulated (as for inbound
+  voice); there is no real telephony provider, and no scheduler decides *when* to call. Covered by `tests/test_outbound_call.py`.
 - **Voice eval path:** audio is simulated: ASR errors are injected as text, STT is a fixed sleep and TTS is text, so real
   STT/TTS latency is not measured. Read-back, wrong-booking, latency and time-to-first-audio are measured through the real
   workflow (`EVALS.md`, Voice). Wellness answers by voice miss the 1.5 s budget (LLM latency, no streaming to TTS).
 - **Approval is unauthenticated** (see ADK section); the simulated emergency SMS is a log line, not a real Twilio call.
 - `ARCHITECTURE.md` LLM costs are measured (n=12 per mode); voice, STT/TTS and Redis costs are not, and its dollar
   projections in section 3 were replaced by a measured-cost estimate with its assumptions stated.
-- `gaps.md` lists what is still open against the brief (model-mix comparison, judge kappa, video, spend figure).

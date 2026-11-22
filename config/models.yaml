@@ -9,6 +9,9 @@ providers:
     models:
       - id: gpt-4o-mini
       - id: gpt-4o
+  - name: ollama
+    models:
+      - id: llama3.2
 
 routing:
   nodes:
@@ -44,3 +47,6 @@ routing:
     - name: mix_openai_4o
       description: "Eval mix: non-Google larger model."
       default_model: gpt-4o
+    - name: mix_ollama
+      description: "Eval mix: open weights SLM via Ollama."
+      default_model: llama3.2

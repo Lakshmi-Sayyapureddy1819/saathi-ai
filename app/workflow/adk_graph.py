@@ -175,7 +175,7 @@ class AdkSaathi:
             msg = genai_types.Content(role="user", parts=[genai_types.Part(text=user_text)])
             res = await self._drive(session, msg, delta)
             s.set_output(res.response)
-        flush()
+        flush(background=session.channel == "voice")
         return res
 
     async def resume(self, session: UserSessionState, interrupt_id: str, decision: ApprovalDecision) -> AdkTurnResult:
