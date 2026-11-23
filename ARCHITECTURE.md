@@ -90,9 +90,13 @@ graph TD
 
 ## 3. Tiered routing and cost estimate (built on measured costs)
 
-**Model mix (what the repo actually runs, `config/models.yaml`):** every production LLM call (the coach's answer and the
-router's fallback classification) uses `gemini-3.5-flash-lite` (fallback `gpt-4o-mini`). `gemini-3.8-flash` is used only
-as the eval judge, so it is not in the serving cost. Booking, safety, slot parsing and handoff make **no** LLM call.
+**Model mix (what the repo actually runs, `config/models.yaml`):** every production LLM call (the coach's answer, the
+router's fallback classification, report explanations, grounding decisions, and safety second stage) routes through
+the centralized `ADKModelGateway` (`app/workflow/gateway.py`), an implementation of Google ADK 2.11's `BaseLlm`.
+For Gemini models, execution uses native ADK `google.adk.models.google_llm.Gemini` (`google.genai.Client`) with zero direct raw HTTP calls.
+Cross-provider fallback (`gpt-4o-mini`, `gpt-4o`, Ollama, vLLM) executes through the gateway's multi-provider adapter with
+bounded retries (max 3 retries, monotonic exponential backoff with jitter) and circuit breaker (3 consecutive failures, 30s cooldown).
+Booking, safety triage, slot parsing and handoff make **no** LLM call.
 A separate `voice` route now exists (same model, latency-first, wired through `WorkflowGraph(model_node="voice")`), and the same eval was run on four mixes (gemini-3.5-flash-lite, gemini-3.8-flash, gpt-4o-mini, gpt-4o): see `EVALS.md` "Model mixes" for quality, p50/p95 and cost per 1k conversations, and the routing policy. Cheapest passing mix: gpt-4o-mini ($0.19 / 1k LLM turns) but it has the worse p95; flash-lite is kept as default for its p95. Not built: streaming into TTS.
 
 ### Routing Policy Summary
