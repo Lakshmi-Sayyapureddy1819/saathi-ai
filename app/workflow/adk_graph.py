@@ -9,6 +9,7 @@ The only ADK-specific piece is human-in-the-loop: when booking fails after retri
                                                                                       -> (pause) -> handoff_resolution
 """
 import asyncio
+import time
 from typing import Optional
 
 from google.adk.agents.context import Context
@@ -22,9 +23,9 @@ from google.adk.workflow.utils._workflow_hitl_utils import (
 from google.genai import types as genai_types
 from pydantic import BaseModel, ConfigDict
 
-from app.observability.tracer import new_trace_id, span, flush
+from app.observability.tracer import new_trace_id, span, flush, get_current_turn_metrics
 from app.workflow.graph import WorkflowGraph
-from app.workflow.state import UserSessionState
+from app.workflow.state import UserSessionState, Turn
 
 APP_NAME = "SaathiWorkflow"
 _GRAPH = WorkflowGraph(chain=False)
@@ -169,12 +170,34 @@ class AdkSaathi:
                                                     session_id=session.session_id)
             cur = dict(stored.state["session"])
             cur["trace_id"] = session.trace_id
+            cur["grounding_mode"] = session.grounding_mode.model_dump(mode="json")  # the API can switch mode mid-session
+            # The turn is appended to the returned session AFTER ADK state is saved, so the stored copy would always miss
+            # it. The API's session is the source of truth for the conversation ledger (memory for follow-ups, metrics).
+            cur["turn_history"] = [t.model_dump(mode="json") for t in session.turn_history]
+            for k in ("total_prompt_tokens", "total_completion_tokens", "total_tokens", "total_cost_usd", "total_latency_ms"):
+                cur[k] = getattr(session, k)
             delta["session"] = cur
+        t0 = time.perf_counter()
         with span("turn", session.trace_id, kind="root", engine="adk", session_id=session.session_id,
                   member_id=session.member.member_id, channel=session.channel, input=user_text) as s:
             msg = genai_types.Content(role="user", parts=[genai_types.Part(text=user_text)])
             res = await self._drive(session, msg, delta)
+            tm = get_current_turn_metrics()
+            pt, ct, tt, cost = tm.get("prompt_tokens", 0), tm.get("completion_tokens", 0), tm.get("total_tokens", 0), tm.get("cost_usd", 0.0)
+            res.session.total_prompt_tokens += pt
+            res.session.total_completion_tokens += ct
+            res.session.total_tokens += tt
+            res.session.total_cost_usd = round(res.session.total_cost_usd + cost, 6)
+            s.set(turn_tokens=tt, turn_cost_usd=cost,
+                  conversation_tokens=res.session.total_tokens, conversation_cost_usd=res.session.total_cost_usd)
             s.set_output(res.response)
+        turn_lat = round((time.perf_counter() - t0) * 1000, 2)
+        res.session.total_latency_ms = round(res.session.total_latency_ms + turn_lat, 2)
+        res.session.turn_history.append(Turn(
+            user_text=user_text, response=res.response, node=res.session.active_node,
+            trace_id=session.trace_id, prompt_tokens=pt, completion_tokens=ct,
+            total_tokens=tt, cost_usd=cost, latency_ms=turn_lat
+        ))
         flush(background=session.channel == "voice")
         return res
 

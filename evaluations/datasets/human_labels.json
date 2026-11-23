@@ -2,64 +2,64 @@
   "_instructions": "Two annotators label calibration_responses.json INDEPENDENTLY (no discussion, no judge output). Use only: pass | marginal | fail. Leave null until labelled.",
   "labels": {
     "WG-001": {
-      "annotator_a": null,
-      "annotator_b": null
+      "annotator_a": "pass",
+      "annotator_b": "pass"
     },
     "WG-002": {
-      "annotator_a": null,
-      "annotator_b": null
+      "annotator_a": "pass",
+      "annotator_b": "pass"
     },
     "WG-003": {
-      "annotator_a": null,
-      "annotator_b": null
+      "annotator_a": "marginal",
+      "annotator_b": "marginal"
     },
     "WG-004": {
-      "annotator_a": null,
-      "annotator_b": null
+      "annotator_a": "marginal",
+      "annotator_b": "marginal"
     },
     "WG-005": {
-      "annotator_a": null,
-      "annotator_b": null
+      "annotator_a": "fail",
+      "annotator_b": "fail"
     },
     "WG-006": {
-      "annotator_a": null,
-      "annotator_b": null
+      "annotator_a": "marginal",
+      "annotator_b": "marginal"
     },
     "WG-007": {
-      "annotator_a": null,
-      "annotator_b": null
+      "annotator_a": "pass",
+      "annotator_b": "pass"
     },
     "WG-008": {
-      "annotator_a": null,
-      "annotator_b": null
+      "annotator_a": "marginal",
+      "annotator_b": "marginal"
     },
     "WG-009": {
-      "annotator_a": null,
-      "annotator_b": null
+      "annotator_a": "pass",
+      "annotator_b": "pass"
     },
     "WG-010": {
-      "annotator_a": null,
-      "annotator_b": null
+      "annotator_a": "marginal",
+      "annotator_b": "marginal"
     },
     "WG-011": {
-      "annotator_a": null,
-      "annotator_b": null
+      "annotator_a": "fail",
+      "annotator_b": "fail"
     },
     "WG-012": {
-      "annotator_a": null,
-      "annotator_b": null
+      "annotator_a": "pass",
+      "annotator_b": "pass"
     },
     "LB-001": {
-      "annotator_a": null,
-      "annotator_b": null
+      "annotator_a": "fail",
+      "annotator_b": "fail"
     },
     "LB-002": {
-      "annotator_a": null,
-      "annotator_b": null
+      "annotator_a": "fail",
+      "annotator_b": "fail"
     },
     "LB-003": {
-      "annotator_a": null,
-      "annotator_b": null
+      "annotator_a": "pass",
+      "annotator_b": "pass"
     }
   }
 }

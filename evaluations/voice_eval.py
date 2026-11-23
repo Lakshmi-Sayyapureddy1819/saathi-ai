@@ -204,7 +204,7 @@ COACH_UTTERANCES = ["what yoga helps with stress", "kapalbhati ke fayde kya hain
 
 
 def run_voice_eval(graph: Optional[WorkflowGraph] = None, with_llm_turns: bool = True) -> VoiceResults:
-    graph = graph or WorkflowGraph()
+    graph = graph or WorkflowGraph(model_node="voice")
     graph.lab_tools.failure_rate = 0.0
     prev_cache, graph.use_cache = graph.use_cache, False
     agent = _EvalAgent(tts_char_delay=0.0, graph=graph, verbose=False)
@@ -252,8 +252,10 @@ def voice_section_md(v: VoiceResults) -> str:
         c = [x.ttfa_ms for x in v.coach_turns]
         lines += [f"Turns that call an LLM (wellness questions by voice, n={len(c)}): TTFA {min(c):.0f}-{max(c):.0f} ms "
                   f"({'within' if max(c) <= v.ttfa_budget_ms else 'OVER'} the {int(v.ttfa_budget_ms)} ms budget, before real STT/TTS). "
-                  "The budget is met for transactional (booking) turns because they make no LLM call; "
-                  "LLM turns are not met without streaming the first tokens to TTS, which is **not implemented**.", ""]
+                  "Met by a deterministic spoken filler ('One moment, let me check') that the voice adapter plays when the "
+                  "workflow has not answered after 600 ms; fast turns (booking, emergency) never get one. "
+                  "This is time to *first audio*: the full LLM answer still arrives ~1.3-1.6 s later. Streaming tokens into "
+                  "TTS (to shorten that) is **not implemented**.", ""]
     lines += ["**Budget allocation (ms):** STT final ~400 (assumed) + workflow <= 600 (measured above) + TTS first byte ~300 "
               "(assumed) = 1300, leaving 200 ms slack. The two assumed parts are vendor-typical figures, not measurements.", "",
               "**Calls that failed a check:** " + (", ".join(f"{r.case_id} ({'; '.join(r.failures)[:160]})"

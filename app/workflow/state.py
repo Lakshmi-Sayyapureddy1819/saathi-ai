@@ -3,6 +3,7 @@
 Models are frozen where the data is a value object; the session itself stays mutable
 because the workflow updates it every turn (use `model_copy(update=...)` for value objects).
 """
+import os
 import uuid
 from datetime import datetime, date
 from typing import List, Literal, Optional
@@ -55,10 +56,56 @@ class TriageStatus(BaseModel):
     status: TriageLevel = "GREEN_NORMAL"
 
 
+GroundingModeName = Literal["mode_a_rag", "mode_b_facts"]
+_MODE_ALIASES: dict[str, GroundingModeName] = {
+    "mode_a_rag": "mode_a_rag", "a": "mode_a_rag", "rag": "mode_a_rag", "agentic_rag": "mode_a_rag",
+    "mode_b_facts": "mode_b_facts", "b": "mode_b_facts", "facts": "mode_b_facts", "no_rag": "mode_b_facts",
+}
+
+
+def default_grounding_mode() -> GroundingModeName:
+    """Config switch for the Program Coach: env GROUNDING_MODE = mode_a_rag (agentic RAG, the default) or
+    mode_b_facts (no retrieval; backend tools + fact-grounded prompt). An unknown value fails loudly at startup rather
+    than silently running the wrong mode."""
+    raw = os.getenv("GROUNDING_MODE", "").strip().lower()
+    if not raw:
+        return "mode_a_rag"
+    if raw not in _MODE_ALIASES:
+        raise ValueError(f"GROUNDING_MODE={raw!r} is invalid; use mode_a_rag or mode_b_facts.")
+    return _MODE_ALIASES[raw]
+
+
 class GroundingMode(BaseModel):
-    """Grounding context mode."""
+    """Grounding context mode (default comes from the GROUNDING_MODE config)."""
     model_config = ConfigDict(frozen=True)
-    mode: Literal["mode_a_rag", "mode_b_facts"] = "mode_a_rag"
+    mode: GroundingModeName = Field(default_factory=default_grounding_mode)
+
+
+class Citation(BaseModel):
+    """A source shown to the member next to an answer. `cited` = the answer itself cited it; False = retrieved or
+    fetched for the answer but not cited inline (shown as 'consulted')."""
+    model_config = ConfigDict(frozen=True)
+    source_id: str
+    title: str
+    kind: Literal["document", "backend_fact"]
+    cited: bool = True
+
+
+class GroundingTrace(BaseModel):
+    """What the coach was actually given on its last turn: the evidence for audits and evals."""
+    model_config = ConfigDict(frozen=True)
+    mode: GroundingModeName
+    text: str
+    sources: List[str] = Field(default_factory=list)
+    retrieval_query: Optional[str] = None   # Mode A: the last query the agent searched with
+    search_queries: List[str] = Field(default_factory=list)  # Mode A: every query, in order
+    agent_steps: int = 0                    # Mode A: agent decisions taken
+    retriever: str = ""                     # Mode A: backend that served the search
+    fabricated_citations: List[str] = Field(default_factory=list)  # ids the model cited that were not in its context
+    uncited: bool = False                   # the answer used sources but cited none of them inline
+    tools_called: List[str] = Field(default_factory=list)  # Mode B: the backend tools the agent called
+    agent_decision: Literal["llm", "deterministic"] = "deterministic"
+    skipped: bool = False
 
 
 class EmergencyPayload(BaseModel):
@@ -76,6 +123,11 @@ class Turn(BaseModel):
     node: str
     trace_id: str
     at: datetime = Field(default_factory=datetime.now)
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    cost_usd: float = 0.0
+    latency_ms: float = 0.0
 
 
 class UserSessionState(BaseModel):
@@ -93,4 +145,11 @@ class UserSessionState(BaseModel):
     yellow_reply: Optional[str] = None  # deterministic no-diagnosis reply for the current turn
     turn_history: List[Turn] = Field(default_factory=list)
     grounding_mode: GroundingMode = Field(default_factory=GroundingMode)
+    last_citations: List[Citation] = Field(default_factory=list)  # verified sources for the latest coach answer
+    last_grounding: Optional[GroundingTrace] = None  # evidence given to the coach on the latest coach turn
     reply_lang: Literal["en", "hinglish"] = "en"  # language of deterministic replies; follows what the member types
+    total_prompt_tokens: int = 0
+    total_completion_tokens: int = 0
+    total_tokens: int = 0
+    total_cost_usd: float = 0.0
+    total_latency_ms: float = 0.0

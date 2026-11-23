@@ -30,6 +30,7 @@ import app.workflow.graph as graph_mod
 from evaluations.run_evals import faithfulness, groundedness, llm_usage, new_session, spans_for
 from app.workflow.graph import WorkflowGraph, execute_turn
 from app.workflow.model_client import ModelClient
+from app.workflow.replies import is_llm_down_reply, is_no_context_reply
 
 SNAPSHOTS = Path("evaluations/snapshots")
 VERSIONS = ("v1", "v2", "v3", "v4")
@@ -122,10 +123,10 @@ def run_version(version: str, golden: List[dict], repeats: int) -> VersionResult
     for c in (c for c in golden if c["category"] == "wellness_guidance"):
         s = new_session(f"PI_{version}_{c['case_id']}")
         resp, s = execute_turn(c["user_input"], s, graph=graph)
-        if resp.startswith("Here is what our library says"):   # model call failed: the workflow's fallback, not an answer
+        if is_llm_down_reply(resp):   # model call failed: the workflow's fallback, not an answer
             print(f"  {version} {c['case_id']} SKIPPED (model error, not scored)", flush=True)
             continue
-        if s.active_node != "node_program_coach" or "I don't have" in resp or resp.startswith("[MOCK"):
+        if s.active_node != "node_program_coach" or is_no_context_reply(resp) or resp.startswith("[MOCK"):
             continue
         u = llm_usage(spans_for(s.trace_id))
         ctx = graph.engine.mode_a_retrieval(c["user_input"])

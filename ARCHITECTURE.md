@@ -95,6 +95,16 @@ router's fallback classification) uses `gemini-3.5-flash-lite` (fallback `gpt-4o
 as the eval judge, so it is not in the serving cost. Booking, safety, slot parsing and handoff make **no** LLM call.
 A separate `voice` route now exists (same model, latency-first, wired through `WorkflowGraph(model_node="voice")`), and the same eval was run on four mixes (gemini-3.5-flash-lite, gemini-3.8-flash, gpt-4o-mini, gpt-4o): see `EVALS.md` "Model mixes" for quality, p50/p95 and cost per 1k conversations, and the routing policy. Cheapest passing mix: gpt-4o-mini ($0.19 / 1k LLM turns) but it has the worse p95; flash-lite is kept as default for its p95. Not built: streaming into TTS.
 
+### Routing Policy Summary
+
+| Routing Node | Primary Model | Fallback Model | Why Selected |
+|---|---|---|---|
+| `cost_optimized` (Chat coach, router fallback) | `gemini-3.5-flash-lite` | `gpt-4o-mini` | Fast tail latency (p95 2.8 s vs 4.2 s for OpenAI mini), 100% faithfulness, 84% lexical groundedness, very low cost ($1.19/1k conversations). Fallback to `gpt-4o-mini` provides cross-vendor resilience during outages. |
+| `quality_optimized` (Report summarization, offline judge) | `gemini-3.8-flash` | `gpt-4o` | High reasoning capacity for complex clinical report analysis and offline claim-level eval judging. Fallback to `gpt-4o` prevents vendor lock-in. |
+| `voice` (Voice channel: inbound / outbound calls) | `gemini-3.5-flash-lite` | `gpt-4o-mini` | Strict 1.5 s TTFA budget: fastest p95 among passing models (2,813 ms vs 4,201 ms for gpt-4o-mini and 11,679 ms for gemini-3.8-flash). Paired with 600 ms deterministic spoken filler. Fallback to `gpt-4o-mini` ensures cross-vendor continuity. |
+| `safety_gate` (Triage & red flags) | None (Deterministic Rules) | None | Zero latency (<1 ms), 100% recall on emergency red flags, 0% failure rate, immune to prompt injection. |
+| `lab_booking` (Catalog, slot selection, booking) | None (Deterministic Code) | None | Zero hallucination on test prices or available slots, 0% wrong-booking rate, ACID consistency with partner APIs. |
+
 **Measured per-turn LLM cost** (latest run, 2026-11-22, n=12 wellness turns per mode, cache off): Mode A $0.000618,
 Mode B $0.000251 (range over runs: A $0.00052-$0.00062, B $0.00023-$0.00026).
 

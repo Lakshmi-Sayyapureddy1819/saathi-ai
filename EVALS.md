@@ -60,7 +60,7 @@ Latency is per LLM call (12 coach calls + 24 suite calls = n=36), so p95 is the 
 
 **Reading it.** Quality is statistically indistinguishable here: faithfulness 99-100% everywhere and 100% citation, so with n=12 the data cannot rank the models on answer quality. Differences that are real: `gemini-3.8-flash` is a thinking model, 3.6x slower (p50 7.5 s) and 7x the cost of flash-lite, and failed one injection case (17/18); `gpt-4o` is 18x the cost of `gpt-4o-mini` for no measured gain and broke the <=120-word rule once. Lexical groundedness is English-only and noisy (see Limitations), so it is not used to choose.
 
-### Routing policy (`config/models.yaml`)
+### Proposed Routing Policy (implemented in `config/models.yaml`)
 
 | Route | Used for | Default | Fallback | Why |
 |---|---|---|---|---|
@@ -70,7 +70,9 @@ Latency is per LLM call (12 coach calls + 24 suite calls = n=36), so p95 is the 
 
 Rules: transactional, safety and handoff turns never call an LLM (deterministic code). Escalate to a larger model only for a measured failure, not by default. Swapping a model is a YAML edit; a new price needs a `PRICING` entry (a test enforces coverage).
 
-**Voice is still over budget for wellness turns.** The best voice model has p50 2.1 s / p95 2.8 s per call, against a 1.5 s time-to-first-audio budget that also has to fit STT and TTS. The route choice does not fix that; streaming tokens into TTS and a spoken filler ("let me check") are still needed and are not built. Booking turns (no LLM) are within budget.
+### Why Voice Is Treated Separately
+
+**Voice wellness turns now meet the first-audio budget via a spoken filler (full answers are still ~2 s).** The best voice model has p50 2.1 s / p95 2.8 s per call, against a 1.5 s time-to-first-audio budget that also has to fit STT and TTS. The route choice does not fix that; streaming tokens into TTS and a spoken filler ("let me check") are still needed and are not built. Booking turns (no LLM) are within budget.
 
 ## Voice (15 scripted calls with simulated ASR errors)
 

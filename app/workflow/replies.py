@@ -22,8 +22,26 @@ dijiye kijiye karein sakta sakti raha rahi hoga hogi lagta lagti ka ke ki ko liy
 
 GREETING = re.compile(
     r"^\s*(hi+|hello+|hey+|hiya|namaste|namaskar|good\s+(morning|afternoon|evening)|howdy)"
-    r"(\s+(there|saathi|team|ji))?\s*[!.?,]*\s*$", re.I)
-THANKS = re.compile(r"^\s*(thanks?|thank\s+you|thx|shukriya|dhanyavaad|dhanyawad)(\s+(a\s+lot|so\s+much|saathi|ji))?\s*[!.]*\s*$", re.I)
+    r"(\s+(there|saathi|team|ji|to\s+you))?"
+    r"(\s*,?\s*(how\s+are\s+you|how\s+r\s+u|how's\s+it\s+going|kaise\s+ho|kya\s+haal\s+hai|sab\s+theek))?\s*[!.?,]*\s*$",
+    re.I
+)
+THANKS = re.compile(
+    r"^\s*(many\s+thanks|bahut\s+shukriya|thanks?|thank\s+(you|u)|thx|shukriya|dhanyavaad|dhanyawad)"
+    r"(\s+(a\s+lot|so\s+much|very\s+much|saathi|ji|again))?\s*[!.?]*\s*$",
+    re.I
+)
+CLOSING = re.compile(
+    r"^\s*(no\s*(thanks?|thank\s+(you|u))?|nothing(\s+else)?|that'?s\s+all|nope|nahi(\s+shukriya)?|kuch\s+nahi|bas(\s+itna\s+hi)?|bye|goodbye|bye\s+bye|take\s+care|see\s+you|alvida)\s*[!.?]*\s*$",
+    re.I
+)
+VOICE_CHECK = re.compile(
+    r"\b(can\s+you\s+hear\s+(me)?|are\s+you\s+(there|listening)|hear\s+me|"
+    r"sun\s+rahe\s+ho|awaaz\s+aa\s+rahi\s+hai|kya\s+tum\s+sun\s+rahe\s+ho|"
+    r"mic\s+test|mic\s+check|audio\s+check|sound\s+check|"
+    r"who\s+are\s+you|what\s+can\s+you\s+do|voice\s+agent)\b",
+    re.I
+)
 
 
 def detect_lang(text: str, previous: Lang = "en") -> Lang:
@@ -47,11 +65,23 @@ MSG: dict[str, tuple[str, str]] = {
     "thanks": (
         "You're most welcome! Is there anything else I can help you with?",
         "Aapka swagat hai! Kya aur kisi cheez mein madad chahiye?"),
+    "closing": (
+        "You're welcome! Take care and stay healthy. Feel free to reach out whenever you need assistance! 😊",
+        "Aapka swagat hai! Apna khayal rakhein, aur jab bhi zaroorat ho, Saathi hamesha yahan hai. Aapka din shubh ho! 😊"),
     "coach_empty": (
         "I'm sorry, I couldn't find that in our program library. I'd be happy to connect you with a care "
         "coordinator or help you book a lab package.",
         "Maaf kijiye, yeh hamari program library mein mujhe nahi mila. Aap chahein toh hum aapko care coordinator "
         "se jod dete hain, ya lab package book karne mein madad kar dete hain."),
+    "voice_check": (
+        "Yes, I can hear you loud and clear! 😊 I'm Saathi, your care companion. I can help you book a lab test "
+        "(like a thyroid screening or full body checkup) or answer questions on diet, yoga, and sleep. "
+        "What would you like to do?",
+        "Haan ji, main aapko bilkul saaf sun sakti hoon! 😊 Main Saathi hoon. Main lab test book karne mein "
+        "ya yoga aur diet jaise wellness sawaalon mein aapki madad kar sakti hoon. Batayiye, aaj kya karna chahenge?"),
+    "voice_clarify": (
+        "I'm here! I didn't quite catch that. Would you like to book a lab test, check available packages, or ask about wellness?",
+        "Main sun rahi hoon! Mujhe theek se samajh nahi aaya. Kya aap lab test book karna chahte hain, ya koi wellness sawaal poochna chahte hain?"),
     "handoff": (
         "I've asked a care coordinator to step in, and they will follow up with you shortly. Thank you for your patience.",
         "Humne ek care coordinator ko is mamle mein jod diya hai, woh jaldi hi aapse sampark karenge. Aapke intezaar ke "
@@ -156,6 +186,18 @@ MSG: dict[str, tuple[str, str]] = {
     "cancel_not_found": (
         "I'm sorry, I couldn't find an active booking with that ID. It may already have been cancelled.",
         "Maaf kijiye, is ID ki koi active booking mujhe nahi mili. Ho sakta hai woh pehle hi cancel ho chuki ho."),
+    "cancel_unavailable": (
+        "I couldn't reach the lab partner to cancel that booking, so it is NOT cancelled yet. Please try again in a few minutes, or I can connect a care coordinator.",
+        "Lab partner tak pahunch nahi paaye, isliye booking abhi cancel NAHI hui hai. Kripya kuch der baad dobara koshish karein, ya main care coordinator se jod sakta hoon."),
+    "my_bookings": (
+        "Here are your lab bookings:\n{lines}\nIf you want to cancel one, reply 'cancel' followed by the booking ID.",
+        "Aapki lab bookings yeh hain:\n{lines}\nAgar koi cancel karni hai, toh 'cancel' ke saath booking ID likhein."),
+    "no_bookings": (
+        "You don't have any lab bookings yet. Would you like to book a test?",
+        "Aapki abhi koi lab booking nahi hai. Kya aap koi jaanch book karwana chahenge?"),
+    "nothing_to_confirm": (
+        "There's no booking waiting for your confirmation right now. Tell me which test you'd like and I'll set it up.",
+        "Abhi aapki koi booking confirmation ke liye pending nahi hai. Aap kaun si jaanch chahte hain, bataiye, hum book kar denge."),
     "helplines": ("Helplines:", "Helpline numbers:"),
 }
 

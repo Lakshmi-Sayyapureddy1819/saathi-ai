@@ -1,0 +1,15 @@
+import { chromium } from "@playwright/test";
+const b = await chromium.launch({ channel: "msedge" });
+const p = await (await b.newContext({ viewport: { width: 1440, height: 900 } })).newPage();
+const base = "http://127.0.0.1:5173", out = "e2e/screenshots/redesign";
+const errs = []; p.on("console", (m) => { if (m.type() === "error") errs.push(m.text()); }); p.on("pageerror", (e) => errs.push(e.message));
+await p.goto(base + "/#/"); await p.locator("#member").waitFor(); await p.waitForTimeout(500);
+await p.getByTestId("start-chat").click(); await p.waitForTimeout(500);
+await p.goto(base + "/#/"); await p.waitForTimeout(1200); await p.screenshot({ path: `${out}/bg-1-overview.png` });
+await p.goto(base + "/#/insights"); await p.getByTestId("insights-dashboard").waitFor(); await p.waitForTimeout(1600);
+await p.screenshot({ path: `${out}/ins-1-dashboard.png`, fullPage: true });
+await p.getByRole("tab", { name: "Compare & plan" }).click(); await p.waitForTimeout(500);
+for (const n of ["Thyroid Screening Profile", "Advanced Diabetic Profile"]) await p.getByRole("button", { name: n, exact: true }).click();
+await p.waitForTimeout(600); await p.screenshot({ path: `${out}/ins-2-plan.png`, fullPage: true });
+console.log(errs.length ? errs.join("\n") : "NO CONSOLE ERRORS");
+await b.close();

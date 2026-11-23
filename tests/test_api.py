@@ -84,7 +84,7 @@ def test_cors_only_allows_configured_origin(client):
 
 def test_config_never_leaks_keys(client):
     body = client.get("/api/config").json()
-    assert set(body) == {"llm_configured", "coordinator_console_enabled", "max_message_chars"}
+    assert set(body) == {"llm_configured", "coordinator_console_enabled", "max_message_chars", "grounding_mode", "retriever"}
 
 
 # ---------------- booking through the real workflow ----------------
@@ -220,3 +220,32 @@ def test_coordinator_rejects_then_member_can_rebook(client, monkeypatch):
     _say(client, sid, hdr, "10:00 AM")
     v = _say(client, sid, hdr, "yes")
     assert _last(v)["kind"] == "booking_confirmed"
+
+
+def test_session_metrics_endpoint(client):
+    r = client.post("/api/sessions", json={"member_id": "MEM_1001"})
+    assert r.status_code == 201
+    data = r.json()
+    sid = data["session"]["session_id"]
+    tok = data["session_token"]
+    hdr = {"Authorization": f"Bearer {tok}"}
+
+    # Send a message
+    client.post(f"/api/sessions/{sid}/messages", json={"text": "hello"}, headers=hdr)
+
+    # Fetch session metrics
+    res = client.get(f"/api/sessions/{sid}/metrics", headers=hdr)
+    assert res.status_code == 200
+    m = res.json()
+    assert m["session_id"] == sid
+    assert m["turn_count"] >= 1
+    assert "total_tokens" in m
+    assert "total_cost_usd" in m
+    assert "total_latency_ms" in m
+    assert len(m["turns"]) >= 1
+
+    # Fetch session view directly
+    sv = client.get(f"/api/sessions/{sid}", headers=hdr).json()
+    assert "metrics" in sv
+    assert sv["metrics"]["session_id"] == sid
+

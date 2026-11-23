@@ -2,13 +2,14 @@ import { expect, test } from "@playwright/test";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { UI_B } from "./ports";
 
 // Incident-drill screenshots (docs/incident_drill/). Run after `python -m evaluations.incident_drill`, which writes
 // docs/incident_drill/report.html (eval diff + trace waterfalls). The UI shot uses the REAL backend on :8001 whose
 // partner-lab API fails on every call (see playwright.config.ts), i.e. the member's view of incident A.
 const OUT = resolve("..", "docs", "incident_drill");
 const REPORT = resolve(OUT, "report.html");
-const UI_B = "http://127.0.0.1:5174";
+
 
 test.skip(!existsSync(REPORT), "run `python -m evaluations.incident_drill` first");
 
@@ -25,11 +26,11 @@ test("drill 2: eval diff + trace waterfall, incident B (bad prompt)", async ({ p
   await page.setViewportSize({ width: 1180, height: 900 });
   await page.goto(pathToFileURL(REPORT).href);
   await page.screenshot({ path: resolve(OUT, "02-incident-B-eval-diff-and-trace.png"), fullPage: true,
-                          clip: await sectionClip(page, "h2#b", null) });
+                          clip: await sectionClip(page, "h2#b", "h2#c") });
 });
 
 test("drill 3: what the member sees during incident A (handoff, never a false 'booked')", async ({ page }) => {
-  await page.goto(`${UI_B}/`);
+  await page.goto(`${UI_B}/#/`);
   await expect(page.getByTestId("start-chat")).toBeEnabled();
   await page.locator("#member").selectOption("MEM_1001");
   await page.getByTestId("start-chat").click();
@@ -38,11 +39,19 @@ test("drill 3: what the member sees during incident A (handoff, never a false 'b
     await page.getByRole("button", { name: "Send", exact: true }).click();
     await expect(page.getByTestId("typing")).toHaveCount(0);
   }
-  await page.locator("#msg").fill("yes confirm");
-  await page.getByRole("button", { name: "Send", exact: true }).click();
-  await expect(page.getByTestId("handoff-status")).toContainText("Waiting for a care coordinator", { timeout: 30_000 });
+  await page.getByTestId("confirm-booking").click();
+  await expect(page.getByTestId("handoff-status")).toContainText("Awaiting coordinator review", { timeout: 30_000 });
   await expect(page.getByTestId("msg-booking_confirmed")).toHaveCount(0);
   await page.screenshot({ path: resolve(OUT, "03-incident-A-member-view-handoff.png") });
+});
+
+test("drill 4: eval diff + trace waterfall, incident C (stale backend record)", async ({ page }) => {
+  await page.setViewportSize({ width: 1180, height: 900 });
+  await page.goto(pathToFileURL(REPORT).href + "#c");
+  await expect(page.locator("h2#c")).toBeVisible();
+  await page.locator("h2#c").scrollIntoViewIfNeeded();
+  await page.screenshot({ path: resolve(OUT, "04-incident-C-stale-record.png"), fullPage: true,
+                          clip: await sectionClip(page, "h2#c", null) });
 });
 
 /** Page rectangle from the top of `from` to the top of `to` (or the end of the page). */

@@ -4,6 +4,8 @@ from typing import Annotated, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
+from app.workflow.state import Citation
+
 MAX_MESSAGE_CHARS = 500
 
 BookingStage = Literal["idle", "choosing_package", "choosing_slot", "confirming"]
@@ -20,8 +22,16 @@ class _Frozen(BaseModel):
 
 
 # ---- requests ----
+GroundingModeName = Literal["mode_a_rag", "mode_b_facts"]
+
+
 class CreateSessionRequest(_Frozen):
     member_id: Annotated[str, StringConstraints(pattern=r"^MEM_\d{4}$")]
+    grounding_mode: Optional[GroundingModeName] = None  # default comes from the GROUNDING_MODE config
+
+
+class SetGroundingRequest(_Frozen):
+    mode: GroundingModeName
 
 
 class SendMessageRequest(_Frozen):
@@ -67,6 +77,8 @@ class ConfigView(_Frozen):
     llm_configured: bool  # False -> coach replies are flagged [MOCK]; booking/safety are unaffected
     coordinator_console_enabled: bool
     max_message_chars: int
+    grounding_mode: Literal["mode_a_rag", "mode_b_facts"] = "mode_a_rag"
+    retriever: str = "lexical"
 
 
 # ---- session state ----
@@ -99,6 +111,16 @@ class HandoffView(_Frozen):
     note: str = ""
 
 
+class GroundingView(_Frozen):
+    """How the coach grounded one answer, for the 'How I answered' panel."""
+    mode: Literal["mode_a_rag", "mode_b_facts"]
+    retriever: str = ""
+    search_queries: List[str] = Field(default_factory=list)
+    tools_called: List[str] = Field(default_factory=list)
+    agent_steps: int = 0
+    decided_by: Literal["llm", "deterministic"] = "deterministic"
+
+
 class ChatMessage(_Frozen):
     id: int
     role: MessageRole
@@ -108,6 +130,8 @@ class ChatMessage(_Frozen):
     trace_id: Optional[str] = None
     emergency: Optional[EmergencyView] = None
     confirmation: Optional[BookingConfirmation] = None
+    citations: List[Citation] = Field(default_factory=list)   # verified server-side, never raw model output
+    grounding: Optional[GroundingView] = None
 
 
 class BookingItem(_Frozen):
@@ -116,6 +140,26 @@ class BookingItem(_Frozen):
     package_name: str
     date: str
     slot: str
+
+
+class TurnMetricsView(_Frozen):
+    trace_id: str
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    cost_usd: float = 0.0
+    latency_ms: float = 0.0
+
+
+class ConversationMetricsView(_Frozen):
+    session_id: str
+    total_prompt_tokens: int = 0
+    total_completion_tokens: int = 0
+    total_tokens: int = 0
+    total_cost_usd: float = 0.0
+    total_latency_ms: float = 0.0
+    turn_count: int = 0
+    turns: List[TurnMetricsView] = Field(default_factory=list)
 
 
 class SessionView(_Frozen):
@@ -127,6 +171,8 @@ class SessionView(_Frozen):
     booking: BookingView
     handoff: HandoffView
     bookings: List[BookingItem] = Field(default_factory=list)
+    grounding_mode: GroundingModeName = "mode_a_rag"
+    metrics: Optional[ConversationMetricsView] = None
 
 
 class SessionCreated(_Frozen):

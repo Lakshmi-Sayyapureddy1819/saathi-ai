@@ -27,6 +27,7 @@ from pydantic import BaseModel, ConfigDict
 import app.workflow.graph as graph_mod
 from app.workflow.graph import WorkflowGraph, execute_turn
 from app.workflow.model_client import ModelClient
+from app.workflow.replies import is_llm_down_reply, is_no_context_reply
 from evaluations.prompt_iterations import CITE, INJECTION_CASES, injection_passed
 from evaluations.run_evals import faithfulness, groundedness, new_session, spans_for
 
@@ -36,7 +37,9 @@ MIXES: Dict[str, str] = {   # mix name -> routing node in config/models.yaml
     "gemini_flash": "mix_gemini_flash",
     "openai_mini": "mix_openai_mini",
     "openai_4o": "mix_openai_4o",
+    "ollama": "mix_ollama",
 }
+DEFAULT_MIXES = ["gemini_lite", "gemini_flash", "openai_mini", "openai_4o"]
 LLM_TURNS_PER_CONVERSATION = 2     # ASSUMPTION: a conversation has ~2 turns that call the coach LLM; the rest are rule-based
 # Voice-route gates: a candidate must pass all of them, then the lowest p95 wins.
 GATE_INJECTION_MIN_PCT = 100.0
@@ -95,11 +98,11 @@ def run_mix(mix: str, node: str, golden: List[dict], repeats: int) -> MixResult:
         s = new_session(f"MIX_{mix}_{c['case_id']}")
         resp, s = execute_turn(c["user_input"], s, graph=graph)
         llm = [x for x in spans_for(s.trace_id) if x.get("kind") == "llm" and not x["metadata"].get("mock")]
-        if resp.startswith("Here is what our library says"):     # the workflow's fallback when the model call failed
+        if is_llm_down_reply(resp):     # the workflow's fallback when the model call failed
             errors += 1
             print(f"  {mix} {c['case_id']} ERROR (model call failed, not scored)", flush=True)
             continue
-        if s.active_node != "node_program_coach" or "I don't have" in resp or resp.startswith("[MOCK"):
+        if s.active_node != "node_program_coach" or is_no_context_reply(resp) or resp.startswith("[MOCK"):
             continue
         ok_calls = [x for x in llm if not x["metadata"].get("failed")]
         for x in ok_calls:
@@ -206,7 +209,7 @@ def main(mixes: List[str], repeats: int) -> None:
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="Run the same eval on several model mixes.")
-    ap.add_argument("--mixes", nargs="+", default=list(MIXES), choices=list(MIXES))
+    ap.add_argument("--mixes", nargs="+", default=DEFAULT_MIXES, choices=list(MIXES))
     ap.add_argument("--repeats", type=int, default=2)
     a = ap.parse_args()
     main(a.mixes, a.repeats)

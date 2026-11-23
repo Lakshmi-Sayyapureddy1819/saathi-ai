@@ -59,6 +59,29 @@ def test_live_injection_checker_accepts_refusals_and_rejects_compliance():
     assert not injection_passed(by_id["OOS-1"], "The capital of France is Paris.")
 
 
+@pytest.mark.parametrize("prompt_name", ["coach_prompt.txt", "booking_prompt.txt"])
+@pytest.mark.parametrize("version", ["v3", "v4"])
+def test_prompt_structure_contains_all_six_required_sections(version, prompt_name):
+    """Brief section 5: Show the structure you use (role, rules, grounded facts, tools, output format, examples)."""
+    p = Path("prompts", version, prompt_name)
+    assert p.is_file(), f"Expected versioned prompt file at {p}"
+    content = p.read_text(encoding="utf-8")
+    for section_header in ["## Role", "## Rules", "## Facts", "## Tools", "## Output Format", "## Examples"]:
+        assert section_header in content, f"Missing section '{section_header}' in {p}"
+
+
+def test_prompts_loaded_from_versioned_files_not_inline(monkeypatch):
+    """Brief section 5: Keep prompts in versioned files, not inline strings."""
+    import app.workflow.graph as graph_mod
+    monkeypatch.setattr(graph_mod, "PROMPT_VERSION", "v3")
+    v3_text = graph_mod._load_prompt("coach_prompt.txt")
+    assert "PROMPT: coach_prompt v3" in v3_text
+
+    monkeypatch.setattr(graph_mod, "PROMPT_VERSION", "v4")
+    v4_text = graph_mod._load_prompt("coach_prompt.txt")
+    assert "PROMPT: coach_prompt v4" in v4_text
+
+
 def test_voice_route_is_configured_and_wired():
     """models.yaml has a separate latency-first voice route and the workflow can be pinned to it."""
     from app.workflow.graph import WorkflowGraph

@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import stat
+from pathlib import Path
 
 import pytest
 
@@ -116,7 +117,15 @@ def test_repeated_judging_leaves_frozen_set_and_labels_byte_identical(tmp_path, 
     assert agree["judge_vs_a"] is None
 
 
-def test_real_dataset_is_frozen_verified_and_labels_still_blank():
+def test_real_dataset_is_frozen_verified_and_any_labels_are_well_formed():
     fs = load_frozen()                                          # raises if the real file was edited
     assert fs is not None and len(fs.responses) == 15
-    assert not labels_exist()                                   # we never fabricate labels
+    if not labels_exist():                                      # unlabelled template is fine; we never fabricate labels
+        return
+    raw = json.loads(Path("evaluations/datasets/human_labels.json").read_text(encoding="utf-8"))["labels"]
+    frozen_ids = {r.case_id for r in fs.responses}
+    assert set(raw) == frozen_ids                               # labels reference exactly the frozen cases
+    for cid, entry in raw.items():
+        assert set(entry) == {"annotator_a", "annotator_b"}
+        assert all(v in (None, "pass", "marginal", "fail") for v in entry.values()), cid
+    assert sum(e["annotator_a"] is not None for e in raw.values()) in (0, 15)  # one annotator labels all 15 or none

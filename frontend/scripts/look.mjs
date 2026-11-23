@@ -1,0 +1,14 @@
+import { chromium } from "@playwright/test";
+const b = await chromium.launch({ channel: "msedge" });
+const p = await (await b.newContext({ viewport: { width: 1440, height: 900 } })).newPage();
+const base = "http://127.0.0.1:5173";
+await p.goto(base + "/#/"); await p.locator("#member").waitFor(); await p.waitForTimeout(1200);
+await p.screenshot({ path: "e2e/screenshots/redesign/look-1-overview-nosession.png" });
+await p.getByTestId("start-chat").click(); await p.waitForTimeout(600);
+await p.goto(base + "/#/"); await p.waitForTimeout(1200);
+await p.screenshot({ path: "e2e/screenshots/redesign/look-2-overview.png" });
+await p.goto(base + "/#/chat"); await p.waitForTimeout(800);
+await p.screenshot({ path: "e2e/screenshots/redesign/look-3-chat.png" });
+await p.goto(base + "/#/voice"); await p.waitForTimeout(800);
+await p.screenshot({ path: "e2e/screenshots/redesign/look-4-voice.png" });
+await b.close();

@@ -8,23 +8,23 @@ your Langfuse-first approach to debugging hallucinations. As promised,
 here is your take-home.
 
 We're looking for an AI engineer who can also think like an AI
-architect. Our clients are together worth about \$500 million, so this
+architect. Our clients are together worth about 500 million, so this
 brief is closer to our real work than a typical assignment. It's built
 on the stack we run in production: Google ADK 2.0, with agents that can
 run on any model (Gemini, OpenAI or open small models), across chat and
 voice.
 
 **Time:** 24 hours from your start. Reply with your start time; please
-start by Mon 23 Nov, 10:00 AM IST.\
+start by Mon 23 Nov, 10:00 AM IST.  
 **Effort:** about 10 focused hours. Use the priority tags (Must / Should
 / Stretch) to cut scope if needed. A clean, honest Must beats a rushed
-everything.\
+everything.  
 **Individual work:** please build this one on your own. In the interview
-we'll ask you to change it live.\
+we'll ask you to change it live.  
 **Submit:** reply to this email with your repo, video and any deployed
 link.
 
-Mrinal\
+Mrinal  
 Founder, HeyDoc AI
 
 **PS (important):** show us your Claude skills. We build with Claude
@@ -44,17 +44,17 @@ calls, in English, Hindi and Hinglish. It has partnered with a national
 diagnostics lab chain so members can book health checkups. The company
 wants one AI companion that:
 
--   answers member questions about their program (schedules, practices,
-    diet guidance), grounded only in the company's own data;
--   recommends and books the right lab test package when a member's goal
-    or question calls for it (for example, "I feel tired all the time"
-    or "I want to check my thyroid");
--   works over chat and over a phone call, for example an outbound call
-    reminding a member about a pending checkup and booking it;
--   never diagnoses, and escalates red-flag symptoms (chest pain,
-    fainting, breathlessness) to urgent care or a human immediately;
--   can swap models per step without code changes, because cost at
-    millions of conversations a month matters as much as quality.
+- answers member questions about their program (schedules, practices,
+diet guidance), grounded only in the company's own data;
+- recommends and books the right lab test package when a member's goal
+or question calls for it (for example, "I feel tired all the time"
+or "I want to check my thyroid");
+- works over chat and over a phone call, for example an outbound call
+reminding a member about a pending checkup and booking it;
+- never diagnoses, and escalates red-flag symptoms (chest pain,
+fainting, breathlessness) to urgent care or a human immediately;
+- can swap models per step without code changes, because cost at
+millions of conversations a month matters as much as quality.
 
 All data must be synthetic. Write your own small data set: about 15
 program/FAQ documents, a small member database (profiles, program
@@ -185,38 +185,39 @@ production.
 
 ## Stretch (only if time allows)
 
--   A tiny web or chat UI, or adk web screenshots, showing a full
-    conversation.
--   A lab-report explainer node that explains a synthetic report and
-    hands off to booking.
+- A tiny web or chat UI, or adk web screenshots, showing a full
+conversation.
+- A lab-report explainer node that explains a synthetic report and
+hands off to booking.
 
 ## Deliverables
 
--   Public GitHub repo. The first commit is `PLAN.md` (problem, users,
-    workflow graph, data model, grounding modes, model routing, cost
-    estimate).
--   README with run steps ("docker compose up" or a short uv/pip
-    sequence), `EVALS.md` (results tables), `ARCHITECTURE.md` (the
-    memo), `AI_USAGE.md` and your Claude skills folder.
--   A 5--8 minute video: a chat demo, a voice demo if built, one trace
-    walkthrough, the Mode A vs Mode B comparison and your model-routing
-    decision.
--   Actual LLM spend in the README. Keep it under ₹500; free tiers are
-    fine.
+- Public GitHub repo. The first commit is `PLAN.md` (problem, users,
+workflow graph, data model, grounding modes, model routing, cost
+estimate).
+- README with run steps ("docker compose up" or a short uv/pip
+sequence), `EVALS.md` (results tables), `ARCHITECTURE.md` (the
+memo), `AI_USAGE.md` and your Claude skills folder.
+- A 5--8 minute video: a chat demo, a voice demo if built, one trace
+walkthrough, the Mode A vs Mode B comparison and your model-routing
+decision.
+- Actual LLM spend in the README. Keep it under ₹500; free tiers are
+fine.
 
 ## How we score (100 points)
 
--   ADK 2.0 workflow design and code-vs-LLM decisions: 15
--   Grounding: agentic RAG vs fact-grounded prompting, and the
-    comparison: 10
--   Evals: coverage, rigour, judge calibration, honesty about gaps: 20
--   Prompt engineering and injection defence, with measured iterations:
-    10
--   Model-agnostic setup, routing/cost analysis and architect memo: 10
--   Observability and the incident drill: 10
--   Voice agent orchestration and voice evals: 5
--   Safety (red flags, no diagnosis, confirmations, data handling): 10
--   AI fluency: Claude skills, AI_USAGE.md, token discipline: 10
+- ADK 2.0 workflow design and code-vs-LLM decisions: 15
+- Grounding: agentic RAG vs fact-grounded prompting, and the
+comparison: 10
+- Evals: coverage, rigour, judge calibration, honesty about gaps: 20
+- Prompt engineering and injection defence, with measured iterations:
+10
+- Model-agnostic setup, routing/cost analysis and architect memo: 10
+- Observability and the incident drill: 10
+- Voice agent orchestration and voice evals: 5
+- Safety (red flags, no diagnosis, confirmations, data handling): 10
+- AI fluency: Claude skills, AI_USAGE.md, token discipline: 10
 
-Questions are welcome. Just reply here. Looking forward to seeing how
+Questions are welcome. Just reply here. Looking forward to seeing 
+
 you think.

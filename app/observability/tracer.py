@@ -15,7 +15,7 @@ import threading
 import time
 import uuid
 from contextlib import contextmanager
-from typing import Any, Iterator, Optional
+from typing import Any, Iterator, Optional, List
 
 from pydantic import BaseModel, ConfigDict
 
@@ -30,6 +30,29 @@ _lf_last_error: Optional[str] = None
 _lf_init_note: str = "not initialised"
 _lf_auth_verified: Optional[bool] = None
 _lf_active: "contextvars.ContextVar[bool]" = contextvars.ContextVar("lf_active", default=False)
+_turn_metrics: "contextvars.ContextVar[Optional[dict]]" = contextvars.ContextVar("turn_metrics", default=None)
+
+
+class TurnMetrics(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    trace_id: str
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    cost_usd: float = 0.0
+    latency_ms: float = 0.0
+
+
+class ConversationMetrics(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    session_id: str
+    total_prompt_tokens: int = 0
+    total_completion_tokens: int = 0
+    total_tokens: int = 0
+    total_cost_usd: float = 0.0
+    total_latency_ms: float = 0.0
+    turn_count: int = 0
+    turns: List[TurnMetrics] = []
 
 
 class TracingStatus(BaseModel):
@@ -184,6 +207,14 @@ class Span:
 
     def set(self, **meta) -> None:
         self.record["metadata"].update(meta)
+        tm = _turn_metrics.get()
+        if tm is not None:
+            if meta.get("prompt_tokens") is not None:
+                tm["prompt_tokens"] += int(meta["prompt_tokens"])
+            if meta.get("completion_tokens") is not None:
+                tm["completion_tokens"] += int(meta["completion_tokens"])
+            if meta.get("cost_usd") is not None:
+                tm["cost_usd"] += float(meta["cost_usd"])
 
     def set_input(self, value: Any) -> None:
         self.record["input"] = _mask(value)
@@ -225,6 +256,10 @@ def span(name: str, trace_id: str, kind: str = "node", input: Any = None, **meta
         s.set_input(input)
     t0 = time.perf_counter()
 
+    tm_token = None
+    if kind == "root":
+        tm_token = _turn_metrics.set({"prompt_tokens": 0, "completion_tokens": 0, "cost_usd": 0.0})
+
     lf_cm, lf_obs, lf_token, lf_attrs = None, None, None, None
     if _langfuse is not None:
         try:
@@ -254,6 +289,20 @@ def span(name: str, trace_id: str, kind: str = "node", input: Any = None, **meta
         raise
     finally:
         rec["latency_ms"] = round((time.perf_counter() - t0) * 1000, 2)
+        if kind == "root":
+            tm = _turn_metrics.get()
+            if tm is not None:
+                pt = tm["prompt_tokens"]
+                ct = tm["completion_tokens"]
+                cost = round(tm["cost_usd"], 6)
+                rec["prompt_tokens"] = pt
+                rec["completion_tokens"] = ct
+                rec["total_tokens"] = pt + ct
+                rec["cost_usd"] = cost
+                rec["metadata"].setdefault("prompt_tokens", pt)
+                rec["metadata"].setdefault("completion_tokens", ct)
+                rec["metadata"].setdefault("total_tokens", pt + ct)
+                rec["metadata"].setdefault("cost_usd", cost)
         if lf_cm is not None:
             try:
                 md = rec["metadata"]
@@ -283,7 +332,88 @@ def span(name: str, trace_id: str, kind: str = "node", input: Any = None, **meta
             finally:
                 if lf_token is not None:
                     _lf_active.reset(lf_token)
+        if tm_token is not None:
+            _turn_metrics.reset(tm_token)
         _write(rec)
+
+
+def get_current_turn_metrics() -> dict:
+    """Return metrics accumulated during the current root span turn."""
+    tm = _turn_metrics.get()
+    if not tm:
+        return {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cost_usd": 0.0}
+    pt = tm.get("prompt_tokens", 0)
+    ct = tm.get("completion_tokens", 0)
+    return {"prompt_tokens": pt, "completion_tokens": ct, "total_tokens": pt + ct, "cost_usd": round(tm.get("cost_usd", 0.0), 6)}
+
+
+def get_conversation_metrics(session_id: str, trace_file: Optional[str] = None) -> ConversationMetrics:
+    """Aggregate tokens, cost and latency across all turns of a conversation (session)."""
+    path = trace_file or TRACE_FILE
+    if not os.path.exists(path):
+        return ConversationMetrics(session_id=session_id)
+
+    turns: dict[str, dict] = {}
+    with open(path, encoding="utf-8", errors="replace") as f:
+        for line in f:
+            if session_id not in line:
+                continue
+            try:
+                rec = json.loads(line)
+            except Exception:
+                continue
+            md = rec.get("metadata", {})
+            if md.get("session_id") != session_id and rec.get("session_id") != session_id:
+                continue
+            tid = rec.get("trace_id")
+            if not tid:
+                continue
+            if tid not in turns:
+                turns[tid] = {"trace_id": tid, "prompt_tokens": 0, "completion_tokens": 0,
+                              "cost_usd": 0.0, "latency_ms": 0.0}
+            if rec.get("kind") == "root":
+                turns[tid]["latency_ms"] = rec.get("latency_ms", 0.0)
+                if rec.get("prompt_tokens") is not None:
+                    turns[tid]["prompt_tokens"] = max(turns[tid]["prompt_tokens"], int(rec["prompt_tokens"]))
+                if rec.get("completion_tokens") is not None:
+                    turns[tid]["completion_tokens"] = max(turns[tid]["completion_tokens"], int(rec["completion_tokens"]))
+                if rec.get("cost_usd") is not None:
+                    turns[tid]["cost_usd"] = max(turns[tid]["cost_usd"], float(rec["cost_usd"]))
+            elif rec.get("kind") == "llm":
+                pt = md.get("prompt_tokens") or rec.get("prompt_tokens") or 0
+                ct = md.get("completion_tokens") or rec.get("completion_tokens") or 0
+                cost = md.get("cost_usd") or rec.get("cost_usd") or 0.0
+                turns[tid]["prompt_tokens"] += int(pt)
+                turns[tid]["completion_tokens"] += int(ct)
+                turns[tid]["cost_usd"] += float(cost)
+
+    turn_metrics_list = []
+    tot_pt = tot_ct = 0
+    tot_cost = tot_lat = 0.0
+    for t in turns.values():
+        tt = t["prompt_tokens"] + t["completion_tokens"]
+        tot_pt += t["prompt_tokens"]
+        tot_ct += t["completion_tokens"]
+        tot_cost += t["cost_usd"]
+        tot_lat += t["latency_ms"]
+        turn_metrics_list.append(TurnMetrics(
+            trace_id=t["trace_id"],
+            prompt_tokens=t["prompt_tokens"],
+            completion_tokens=t["completion_tokens"],
+            total_tokens=tt,
+            cost_usd=round(t["cost_usd"], 6),
+            latency_ms=round(t["latency_ms"], 2)
+        ))
+    return ConversationMetrics(
+        session_id=session_id,
+        total_prompt_tokens=tot_pt,
+        total_completion_tokens=tot_ct,
+        total_tokens=tot_pt + tot_ct,
+        total_cost_usd=round(tot_cost, 6),
+        total_latency_ms=round(tot_lat, 2),
+        turn_count=len(turn_metrics_list),
+        turns=turn_metrics_list
+    )
 
 
 def flush(background: bool = False) -> None:

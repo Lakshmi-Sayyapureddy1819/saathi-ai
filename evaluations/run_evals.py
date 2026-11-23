@@ -20,10 +20,12 @@ os.environ.setdefault("TRACE_FILE", "logs/eval_traces.jsonl")
 from pydantic import BaseModel, ConfigDict
 
 from app.grounding.engine import GroundingEngine
+from app.observability.tracer import new_trace_id
 from app.tools.lab_tools import LabTools, FASTING_SLOTS, REGULAR_SLOTS
 from app.workflow.graph import WorkflowGraph, execute_turn
 from app.workflow.model_client import ModelClient
-from app.workflow.state import UserSessionState, MemberProfile, GroundingMode
+from app.workflow.replies import is_llm_down_reply, is_no_context_reply, say
+from app.workflow.state import UserSessionState, MemberProfile, GroundingMode, PendingCheckup
 from evaluations.voice_eval import run_voice_eval, voice_section_md
 
 logging.basicConfig(level=logging.ERROR)
@@ -121,9 +123,12 @@ LIMITATIONS_MD = """## Limitations (read before quoting any number above)
 **Strict lexical groundedness** is English-only: it cannot score faithful Hindi/Hinglish translations, so it
 understates Hinglish answers. It is kept, with its original definition, for comparability.
 
-**Retrieval.** Lexical (stemming + a small Hinglish lexicon). *Known issue:* an off-topic query such as "what is the
-weather" retrieves the Sheetali Pranayama document (it mentions summer weather); retrieval has no off-topic
-rejection, so the answer relies on the coach prompt declining to use irrelevant context. This is not evaluated.
+**Retrieval.** Default backend is lexical (stemming + a small Hinglish lexicon); dense embeddings are available with
+RETRIEVER=embedding (in-memory index, no database). Off-topic rejection is enforced by both (keyword guard / cosine floor) and
+measured in `evaluations/deterministic_eval.py` and `evaluations.retriever_compare` on small labelled sets (27 on-topic, 15
+off-topic queries; the lexical rules were tuned on this set, so its 27/27 and 0/15 are optimistic). There are no gold document ids,
+so ranking precision is not measured. The Mode A agent loop adds up to 3 planner calls per turn; its quality is judged only
+through end-to-end faithfulness, not step by step.
 
 **Conditions.** Correctness metrics run with the simulated partner-lab failure rate forced to 0 (chaos is measured
 separately); Mode A/B runs have the semantic cache off; the intent router can fall back to an LLM, so intent
@@ -272,10 +277,35 @@ def judge_agreement(judged: Dict[str, str], labels: Dict[str, Dict[str, str]]) -
 
     def k(ids, x, y):
         return cohens_kappa(x, y) if len(ids) >= MIN_LABELLED else None
-    return {"n": max(len(ids_a), len(ids_b)),
+    return {"n": max(len(ids_a), len(ids_b)), "n_a": len(ids_a), "n_b": len(ids_b), "n_ab": len(ids_ab),
             "human_vs_human": k(ids_ab, [labels[c]["annotator_a"] for c in ids_ab], [labels[c]["annotator_b"] for c in ids_ab]),
             "judge_vs_a": k(ids_a, [judged[c] for c in ids_a], [labels[c]["annotator_a"] for c in ids_a]),
             "judge_vs_b": k(ids_b, [judged[c] for c in ids_b], [labels[c]["annotator_b"] for c in ids_b])}
+
+
+UNANSWERABLE = ["What is my blood group?", "What is my doctor's phone number?",
+                "What was my last cholesterol reading?", "Which hospital is closest to my house?",
+                "What is my health insurance policy number?"]
+
+
+def member_questions(tools: LabTools) -> List[tuple]:
+    """Questions whose answers live ONLY in the backend (profile, bookings, catalogue): (question, expected substring).
+    This is where Mode B must answer and Mode A (library only) must not invent anything."""
+    pkg = tools.lab_packages[0]
+    return [("What programs am I enrolled in?", "Yoga for Stress"),
+            ("Which lab tests have I already booked?", "Thyroid Screening"),
+            ("What are my health goals?", "better sleep"),
+            ("Do I have any checkup due soon?", pkg.package_id),
+            (f"What does the {pkg.name} cost?", str(pkg.price_inr))]
+
+
+def member_session(case_id: str, mode: str, tools: LabTools) -> UserSessionState:
+    pkg = tools.lab_packages[0]
+    m = MemberProfile(member_id=f"EVAL_{case_id}", name="Asha", age=41, enrolled_programs=["Yoga for Stress"],
+                      health_goals=["better sleep"],
+                      past_bookings=["BOK_9001 - Thyroid Screening Profile on 2026-12-01 09:00 AM"],
+                      pending_checkups=[PendingCheckup(package_id=pkg.package_id, due_date=date(2026, 12, 15))])
+    return UserSessionState(channel="eval", member=m, active_node="start", grounding_mode=GroundingMode(mode=mode))
 
 
 def new_session(case_id: str, mode: str = "mode_a_rag") -> UserSessionState:
@@ -329,12 +359,19 @@ def ab_recommendation_md(ab: Dict[str, Dict[str, List[float]]]) -> str:
     cost_x = statistics.mean(a["cost"]) / statistics.mean(b["cost"])
     tok_a, tok_b = statistics.mean(a["tok"]), statistics.mean(b["tok"])
     lat_d = statistics.mean(a["lat"]) - statistics.mean(b["lat"])
+
+    def pc(d: Dict[str, List[float]], key: str) -> str:
+        return f"{100 * statistics.mean(d[key]):.0f}%" if d.get(key) else "N/A"
     return (
         "### Which mode I would recommend, and when\n\n"
-        f"**Measured here:** Mode A costs {cost_x:.1f}x more per turn and is ~{lat_d:.0f} ms slower (mean), because retrieved "
-        f"passages enlarge the prompt ({tok_a:.0f} vs {tok_b:.0f} tokens/turn). One run, n=12 per mode; hallucination "
-        "rate per mode was **not** measured separately (the faithfulness judge scores Mode A answers only), so the advice "
-        "below rests on that cost/latency gap plus how each mode fails, not on a measured accuracy gap.\n\n"
+        f"**Measured here (same questions, both modes, planner call included in cost and latency):** Mode A costs "
+        f"{cost_x:.1f}x Mode B per turn and is {lat_d:+.0f} ms in mean latency, because the planner call and the retrieved "
+        f"passages enlarge the work ({tok_a:.0f} vs {tok_b:.0f} tokens/turn). Hallucination rate (turns with at least one "
+        f"unsupported claim): Mode A {pc(a, 'halluc_turns')}, Mode B {pc(b, 'halluc_turns')}. Answer coverage on the "
+        f"wellness questions: Mode A {pc(a, 'answered')}, Mode B {pc(b, 'answered')}. Abstains on unanswerable questions: "
+        f"Mode A {pc(a, 'abstain')}, Mode B {pc(b, 'abstain')}. On member-data questions (answer only in the backend): correct Mode A {pc(a, 'member_correct')}, Mode B {pc(b, 'member_correct')}; hallucination Mode A {pc(a, 'member_halluc')}, Mode B {pc(b, 'member_halluc')}. One run, n=12 wellness turns + 5 member questions per mode, same-vendor judge: read these "
+        "as direction, not as a measured accuracy gap. Mode B is expected to look 'more grounded' partly because it "
+        "answers far fewer wellness questions: compare coverage next to faithfulness, never faithfulness alone.\n\n"
         "**Recommend Mode B (facts + tools) when** the client has no vector store yet, or the questions are about the "
         "member's own data (schedule, bookings, profile, package catalogue) that already sits behind an API. The facts are "
         "exact and current, nothing can be stale or mis-retrieved, it is the cheapest and fastest option, and the safe "
@@ -343,9 +380,16 @@ def ab_recommendation_md(ab: Dict[str, Dict[str, List[float]]]) -> str:
         "**Recommend Mode A (agentic RAG) when** the client has a large or frequently edited content library (yoga "
         "practices, diet guidance, FAQs) and members ask open-ended \"how / why / what helps\" questions that no table "
         "lookup can answer, and answers must cite their source document. Budget for the higher per-turn cost, an index to "
-        "keep fresh, and the known retrieval gap in the limitations below (no off-topic rejection).\n\n"
+        "keep fresh, and the retrieval limits listed below.\n\n"
         "**My default for this client:** start with Mode B for anything about the member (it is deterministic and cheap), "
         "add Mode A only for the content library, and let deterministic code, not the LLM, pick the mode per question.\n")
+
+
+def static_section_md(name: str) -> str:
+    """Report sections written alongside their snapshot (evaluations/sections/<name>.md: model mixes, deterministic eval).
+    Kept as files so a re-run of this script never drops them from the published EVALS.md."""
+    path = Path("evaluations/sections") / f"{name}.md"
+    return path.read_text(encoding="utf-8") + chr(10) if path.exists() else ""
 
 
 def prompt_iterations_md() -> str:
@@ -375,12 +419,14 @@ def main(promote: bool = False) -> None:
     audit: List[dict] = []
     raw = []
 
+    lang_counts = {"en": 0, "hinglish": 0}
     seq_sessions: Dict[str, UserSessionState] = {}
     for case in golden:
         # Multi-turn sequences (e.g. LB-SEQ-007-1..3) share one session; every other case is isolated.
         seq_key = case["case_id"].rsplit("-", 1)[0] if "-SEQ-" in case["case_id"] else case["case_id"]
         session = seq_sessions.setdefault(seq_key, new_session(seq_key))
         response, session = execute_turn(case["user_input"], session, graph=graph)
+        lang_counts[session.reply_lang] += 1
         spans = spans_for(session.trace_id)
         exp_intent = normalize_intent(case.get("expected_intent"))
         got = normalize_intent(session.active_node)
@@ -392,11 +438,15 @@ def main(promote: bool = False) -> None:
             nodiag = nodiag.add(session.triage_status.status == "YELLOW_WARNING")
         for ok in tool_call_args_correct(spans, graph.lab_tools):
             args_ok = args_ok.add(ok)
-        if got == "PROGRAM_COACH" and "I don't have" not in response and not response.startswith("[MOCK"):
-            ctx = graph.engine.mode_a_retrieval(case["user_input"])
-            grounded.append(groundedness(response, ctx.text))
-            fr = faithfulness(response, ctx.text)
-            audit.append({"case_id": case["case_id"], "sources": ctx.sources,
+        if (got == "PROGRAM_COACH" and not is_no_context_reply(response) and not is_llm_down_reply(response)
+                and not response.startswith("[MOCK")):
+            # Audit against what the agent actually retrieved this turn (its own, possibly rewritten, query).
+            lg = session.last_grounding
+            ctx_text, ctx_sources = ((lg.text, lg.sources) if lg is not None
+                                     else (lambda c: (c.text, c.sources))(graph.engine.mode_a_retrieval(case["user_input"])))
+            grounded.append(groundedness(response, ctx_text))
+            fr = faithfulness(response, ctx_text)
+            audit.append({"case_id": case["case_id"], "sources": ctx_sources,
                           "lexical": round(grounded[-1], 3),
                           "faithfulness": None if fr is None else round(fr.score, 3),
                           "unsupported_claims": None if fr is None else fr.unsupported})
@@ -437,19 +487,64 @@ def main(promote: bool = False) -> None:
     # Voice: 15 scripted calls with simulated ASR errors through the same workflow (evaluations/voice_eval.py).
     voice = run_voice_eval(graph)
 
-    # Mode A vs Mode B: measured latency/tokens/cost over the wellness cases.
+    # Mode A vs Mode B: the same wellness cases + the same unanswerable questions through both modes.
+    # Scored per mode: latency/tokens/cost (planner call included, it is in the same trace), claim-level faithfulness
+    # against the context the agent actually used, lexical groundedness, answer coverage, and abstention.
     ab: Dict[str, Dict[str, List[float]]] = {}
     graph.use_cache = False  # A/B must measure real generation, not cache hits
     wellness = [c for c in golden if c["category"] == "wellness_guidance"]
     for mode in ("mode_a_rag", "mode_b_facts"):
-        lat, tok, cost = [], [], []
+        lat, tok, cost, f_score, lex, answered = [], [], [], [], [], []
+        halluc_turns: List[float] = []
+        cite_ok: List[float] = []   # answered turns that cite >=1 verified source
+        cite_fab: List[float] = []  # answered turns where the model cited an id it was never given
         for c in wellness:
             s = new_session(f"AB_{c['case_id']}", mode)
-            _, s = execute_turn(c["user_input"], s, graph=graph)
+            resp, s = execute_turn(c["user_input"], s, graph=graph)
             u = llm_usage(spans_for(s.trace_id))
             if u["calls"]:
                 lat.append(u["latency_ms"]); tok.append(u["tokens"]); cost.append(u["cost_usd"])
-        ab[mode] = {"lat": lat, "tok": tok, "cost": cost}
+            if resp.startswith("[MOCK") or is_llm_down_reply(resp):
+                continue
+            abstained = is_no_context_reply(resp)
+            answered.append(0.0 if abstained else 1.0)
+            if not abstained and s.last_grounding is not None:
+                ctx_text = s.last_grounding.text
+                lex.append(groundedness(resp, ctx_text))
+                cite_ok.append(1.0 if any(x.cited for x in s.last_citations) else 0.0)
+                cite_fab.append(1.0 if s.last_grounding.fabricated_citations else 0.0)
+                fr = faithfulness(resp, ctx_text)
+                if fr is not None:
+                    f_score.append(fr.score)
+                    halluc_turns.append(1.0 if fr.unsupported else 0.0)
+        # Abstention: questions neither mode's evidence can answer must get "I don't have that information".
+        abstain = []
+        for i, q in enumerate(UNANSWERABLE):
+            s = new_session(f"ABS_{i}", mode)
+            s.trace_id = new_trace_id()
+            resp, s = graph.node_program_coach(q, s)
+            if not (resp.startswith("[MOCK") or is_llm_down_reply(resp)):
+                abstain.append(1.0 if (is_no_context_reply(resp) or resp in (say('en', 'voice_clarify'), say('hinglish', 'voice_clarify'))) else 0.0)
+        # Member-data questions (answer exists only in backend facts): correctness + faithfulness + hallucination.
+        m_correct, m_faith, m_halluc = [], [], []
+        for i, (q, expected) in enumerate(member_questions(graph.lab_tools)):
+            s = member_session(f"MEM_{i}", mode, graph.lab_tools)
+            s.trace_id = new_trace_id()
+            resp, s = graph.node_program_coach(q, s)
+            if resp.startswith("[MOCK") or is_llm_down_reply(resp):
+                continue
+            m_correct.append(1.0 if expected.lower() in resp.lower() else 0.0)
+            if not is_no_context_reply(resp) and s.last_grounding is not None:
+                cite_ok.append(1.0 if any(x.cited for x in s.last_citations) else 0.0)
+                cite_fab.append(1.0 if s.last_grounding.fabricated_citations else 0.0)
+                fr = faithfulness(resp, s.last_grounding.text)
+                if fr is not None:
+                    m_faith.append(fr.score)
+                    m_halluc.append(1.0 if fr.unsupported else 0.0)
+        ab[mode] = {"lat": lat, "tok": tok, "cost": cost, "faithful": f_score, "lexical": lex,
+                    "answered": answered, "halluc_turns": halluc_turns, "abstain": abstain,
+                    "member_correct": m_correct, "member_faithful": m_faith, "member_halluc": m_halluc,
+                    "cite_ok": cite_ok, "cite_fabricated": cite_fab}
 
     # Judge kappa. The judge scores the FROZEN calibration responses (the same ones humans label). This code never
     # regenerates or writes them; generation is `python -m evaluations.freeze_calibration`.
@@ -478,7 +573,11 @@ def main(promote: bool = False) -> None:
     g_mean = round(100 * statistics.mean(grounded), 1) if grounded else None
     f_mean = round(100 * statistics.mean(faithful), 1) if faithful else None
     judge_ok = faithfulness_judge_control(graph.engine)
+    total_lang = lang_counts["en"] + lang_counts["hinglish"]
+    share_hi = round(100 * lang_counts["hinglish"] / total_lang, 1) if total_lang else 0
+    
     rows = [
+        ("Share of Hindi/Hinglish cases", f"{share_hi}%", "-", f"n={total_lang}"),
         ("Intent accuracy (wellness+lab)", fmt(intent.pct()), ">= 95%", f"n={intent.total}"),
         ("Red-flag recall", fmt(recall.pct()), "100%", f"n={recall.total}"),
         ("No-diagnosis compliance", fmt(nodiag.pct()), "100%", f"n={nodiag.total}"),
@@ -499,23 +598,38 @@ def main(promote: bool = False) -> None:
         ("Voice: time to first audio p50 / p95 (simulated STT+TTS)", f"{voice.ttfa_ms_p50} / {voice.ttfa_ms_p95} ms",
          f"<= {int(voice.ttfa_budget_ms)} ms", f"{voice.turns_over_budget}/{voice.n_turns} over budget"),
         ("Calibration set frozen + hash verified", calib_status, "OK", f"n={calib_n}"),
-        ("Inter-annotator kappa (human A vs B)", fmt_k(agree["human_vs_human"], agree["n"]), ">= 0.6", f"n={agree['n']}"),
-        ("Judge kappa vs annotator A", fmt_k(agree["judge_vs_a"], agree["n"]), ">= 0.6", f"n={agree['n']}"),
-        ("Judge kappa vs annotator B", fmt_k(agree["judge_vs_b"], agree["n"]), ">= 0.6", f"n={agree['n']}"),
+        ("Inter-annotator kappa (A vs B; same person in this repo, see README)", fmt_k(agree["human_vs_human"], agree["n_ab"]), ">= 0.6", f"n={agree['n_ab']}"),
+        ("Judge kappa vs annotator A", fmt_k(agree["judge_vs_a"], agree["n_a"]), ">= 0.6", f"n={agree['n_a']}"),
+        ("Judge kappa vs annotator B", fmt_k(agree["judge_vs_b"], agree["n_b"]), ">= 0.6", f"n={agree['n_b']}"),
     ]
     table = "| Metric | Result | Target | Sample |\n|---|---|---|---|\n" + "\n".join(
         f"| {a} | {b} | {c} | {d} |" for a, b, c, d in rows)
-    ab_table = "| Mode | LLM latency mean (ms) | LLM latency p95 (ms) | Tokens/turn mean | Cost/turn (USD) | n |\n|---|---|---|---|---|---|\n"
+    ab_table = ("| Mode | LLM latency mean (ms) | LLM latency p95 (ms) | Tokens/turn mean | Cost/turn (USD) | "
+                "Faithfulness (claim-level) | Hallucination rate (turns with an unsupported claim) | "
+                "Lexical groundedness | Answer coverage | Abstains when it should | Answers citing a verified source | Fabricated citations (turns) | n |\n"
+                "|---|---|---|---|---|---|---|---|---|---|---|---|---|\n")
+    def pct_of(xs: List[float]) -> Optional[float]:
+        return round(100 * statistics.mean(xs), 1) if xs else None
     for mode, d in ab.items():
         ab_table += (f"| {mode} | {fmt(mean(d['lat']), '')} | {fmt(p95(d['lat']), '')} | {fmt(mean(d['tok']), '')} | "
-                     f"{fmt(round(statistics.mean(d['cost']), 6) if d['cost'] else None, '')} | {len(d['lat'])} |\n")
+                     f"{fmt(round(statistics.mean(d['cost']), 6) if d['cost'] else None, '')} | "
+                     f"{fmt(pct_of(d['faithful']))} | {fmt(pct_of(d['halluc_turns']))} | {fmt(pct_of(d['lexical']))} | "
+                     f"{fmt(pct_of(d['answered']))} | {fmt(pct_of(d['abstain']))} | {fmt(pct_of(d['cite_ok']))} | {fmt(pct_of(d['cite_fabricated']))} | "
+                     f"{len(d['lat'])} (abstain n={len(d['abstain'])}) |\n")
+    ab_table += ("\n**Member-data questions** (answer exists only in backend facts: enrolled programs, bookings, "
+                 "goals, due checkups, catalogue price)\n\n| Mode | Correct answers | Faithfulness | Hallucination rate | n |\n"
+                 "|---|---|---|---|---|\n")
+    for mode, d in ab.items():
+        ab_table += (f"| {mode} | {fmt(pct_of(d['member_correct']))} | {fmt(pct_of(d['member_faithful']))} | "
+                     f"{fmt(pct_of(d['member_halluc']))} | {len(d['member_correct'])} |\n")
     note = ("\n_Measured on " + str(date.today()) + ". N/A means no real LLM call was made (set GEMINI_API_KEY / "
             "OPENAI_API_KEY). Kappa is N/A until two independent annotators label 15 calibration responses (README: Judge calibration)._\n")
     print("\n" + table + "\n\n" + ab_table + note)
 
     report_body = ("## Metrics\n\n" + table + "\n\n## Mode A (retrieval) vs Mode B (facts + tools)\n\n" + ab_table + note
-                   + chr(10) + ab_recommendation_md(ab) + chr(10) + voice_section_md(voice) + chr(10)
-                   + prompt_iterations_md() + chr(10) + LIMITATIONS_MD)
+                   + chr(10) + ab_recommendation_md(ab) + chr(10) + static_section_md("model_mixes") + chr(10)
+                   + voice_section_md(voice) + chr(10)
+                   + prompt_iterations_md() + chr(10) + static_section_md("deterministic") + chr(10) + LIMITATIONS_MD)
     paths = write_outputs({"rows": rows, "ab": ab, "voice": voice.model_dump(), "groundedness_audit": audit,
                            "raw": raw}, report_body,
                           promote=promote, now=datetime.now(timezone.utc))

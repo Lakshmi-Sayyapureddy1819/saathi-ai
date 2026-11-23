@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, api } from "./api";
-import type { ChatMessage, SessionView } from "./types";
+import type { ChatMessage, GroundingModeName, SessionView } from "./types";
 
 const STORE_KEY = "saathi.session"; // sessionStorage: per-tab, cleared when the tab closes
 
@@ -65,14 +65,14 @@ export function useSession() {
     } finally { setStarting(false); }
   }, []);
 
-  const send = useCallback(async (text: string) => {
+  const send = useCallback(async (text: string, channel: "web" | "voice" = "web") => {
     const s = stored.current;
     if (!s || busy) return;
     setBusy(true); setError(null);
     setPending({ id: -1, role: "user", kind: "answer", text, at: new Date().toISOString(), trace_id: null,
                  emergency: null, confirmation: null, clientState: "sending" });
     try {
-      setSession(await api.send(s.id, s.token, text));
+      setSession(await api.send(s.id, s.token, text, channel));
       setPending(null);
     } catch (e) {
       const err = e instanceof ApiError ? e : new ApiError(0, "Something went wrong.");
@@ -89,6 +89,13 @@ export function useSession() {
   const retry = useCallback(() => { if (error) { const t = error.text; setPending(null); void send(t); } }, [error, send]);
   const dismissError = useCallback(() => { setPending(null); setError(null); }, []);
 
+  const setGrounding = useCallback(async (mode: GroundingModeName) => {
+    const s = stored.current;
+    if (!s || busy) return;
+    try { setSession(await api.setGrounding(s.id, s.token, mode)); }
+    catch (e) { setNotice(e instanceof ApiError ? e.message : "Couldn't switch the answer mode."); }
+  }, [busy]);
+
   const end = useCallback(async () => {
     const s = stored.current;
     clear();
@@ -96,5 +103,5 @@ export function useSession() {
   }, [clear]);
 
   const messages: ChatMessage[] = pending ? [...(session?.messages ?? []), pending] : session?.messages ?? [];
-  return { session, messages, busy, starting, restoring, notice, setNotice, error, start, send, retry, dismissError, end };
+  return { session, messages, busy, starting, restoring, notice, setNotice, error, start, send, retry, dismissError, end, setGrounding };
 }

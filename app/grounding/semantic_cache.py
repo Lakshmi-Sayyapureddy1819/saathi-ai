@@ -34,9 +34,13 @@ from pydantic import BaseModel, ConfigDict
 
 EMBED_MODEL = os.getenv("EMBED_MODEL", "gemini-embedding-001")
 DEFAULT_TTL_S = int(os.getenv("SEMANTIC_CACHE_TTL_SECONDS", "3600"))
+DEFAULT_THRESHOLD = float(os.getenv("SEMANTIC_CACHE_THRESHOLD", "0.88"))
 REDIS_MAX_ENTRIES = 300  # each Redis entry holds a 3072-float embedding; the lookup scans them all
 REDIS_RETRY_AFTER_S = 30.0
-_BYPASS = re.compile(r"\b(name|slot|slots|book|booking|test|package|appointment|tomorrow|today|am|pm)\b|\bLP_\d+|\d", re.I)
+_BYPASS = re.compile(
+    r"\b(name|slot|slots|book|booking|test|package|appointment|tomorrow|today|am|pm|profile|report|past|history|cancel|reschedule)\b|\bLP_\d+|\d",
+    re.I,
+)
 
 
 class CacheStats(BaseModel):
@@ -54,6 +58,20 @@ class CacheStats(BaseModel):
     expired: int = 0  # entries dropped because their TTL elapsed
     redis_errors: int = 0
     redis_configured: bool = False
+
+
+def redis_url_from_env() -> str:
+    """REDIS_URL if set; otherwise derive it from Upstash's REST credentials. An Upstash REST token is also the password
+    of the database's TLS Redis endpoint, so UPSTASH_REDIS_REST_URL (https://<host>) + UPSTASH_REDIS_REST_TOKEN give
+    rediss://default:<token>@<host>:6379."""
+    url = os.getenv("REDIS_URL", "").strip()
+    if url:
+        return url
+    rest, token = os.getenv("UPSTASH_REDIS_REST_URL", "").strip(), os.getenv("UPSTASH_REDIS_REST_TOKEN", "").strip()
+    if rest and token:
+        host = re.sub(r"^https?://", "", rest).strip("/")
+        return f"rediss://default:{token}@{host}:6379"
+    return ""
 
 
 def _cosine(a: List[float], b: List[float]) -> float:
@@ -96,10 +114,10 @@ def _unpack(blob: str) -> List[float]:
 
 
 class SemanticCache:
-    def __init__(self, threshold: float = 0.75, max_size: int = 1000, ttl_seconds: Optional[int] = None,
+    def __init__(self, threshold: Optional[float] = None, max_size: int = 1000, ttl_seconds: Optional[int] = None,
                  namespace: str = "default", redis_client=None, redis_url: Optional[str] = None,
                  clock: Callable[[], float] = time.monotonic):
-        self.threshold = threshold
+        self.threshold = DEFAULT_THRESHOLD if threshold is None else threshold
         self.max_size = max_size
         self.ttl_seconds = DEFAULT_TTL_S if ttl_seconds is None else ttl_seconds
         self.namespace = namespace
@@ -110,7 +128,7 @@ class SemanticCache:
         self.lookups = self.hits = self.bypassed = self.expired = self.redis_errors = 0
         self._backend = "embedding"
         self._redis = redis_client
-        self._redis_url = redis_url if redis_url is not None else os.getenv("REDIS_URL", "")
+        self._redis_url = redis_url if redis_url is not None else redis_url_from_env()
         self._redis_retry_at = 0.0
         self._redis_connected = redis_client is not None
 
@@ -226,6 +244,12 @@ class SemanticCache:
                 self.bypassed += 1
                 return None
             self._purge_expired()
+            if not self.cache and not self._redis_connected and not self._redis_url and not self._redis:
+                return None
+            # Exact match fast path for in-memory cache: instantaneous return when Redis is not configured
+            if not (self._redis_connected or self._redis_url or self._redis) and query in self.cache:
+                self.hits += 1
+                return self.cache[query][1]
         qv = _embed(query)
         if qv is not None:
             shared = self._redis_get(qv)
@@ -244,7 +268,7 @@ class SemanticCache:
                 return best_resp
         return None
 
-    def set(self, query: str, response: str) -> None:
+    def _do_set(self, query: str, response: str) -> None:
         if _BYPASS.search(query):
             return
         qv = _embed(query)
@@ -256,6 +280,14 @@ class SemanticCache:
             if len(self.cache) >= self.max_size:
                 self.cache.popitem(last=False)
             self.cache[query] = (qv, response, self._clock())
+
+    def set(self, query: str, response: str, sync: bool = False) -> None:
+        if _BYPASS.search(query):
+            return
+        if sync or os.getenv("PYTEST_CURRENT_TEST"):
+            self._do_set(query, response)
+        else:
+            threading.Thread(target=self._do_set, args=(query, response), daemon=True).start()
 
     def stats(self) -> CacheStats:
         with self._lock:

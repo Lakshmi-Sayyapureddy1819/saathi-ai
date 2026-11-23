@@ -1,0 +1,39 @@
+/* Saathi Care design tokens. Every colour, size, radius, shadow and duration used in the app comes from here. */
+:root {
+  /* brand: deep teal */
+  --teal-950: #14123a; --teal-900: #1e1b5a; --teal-800: #2a2a85; --teal-700: #3a3fb5; --teal-600: #4a52d6;
+  --teal-500: #6366f1; --teal-300: #a5b4fc; --teal-200: #c7d2fe; --teal-100: #e0e7ff; --teal-50: #eef2ff;
+  --sage-100: #ece9fb; --sage-200: #d9d4f5; --mint-100: #e3e8ff;
+  /* neutrals (warm) */
+  --canvas: #f6f5fb; --canvas-2: #eeedf7; --surface: #ffffff; --surface-2: #fbfbfe;
+  --ink: #1a1b2e; --ink-2: #34364f; --muted: #5c5f7a; --faint: #8c8fa8;
+  --border: #e3e1ef; --border-strong: #cfcce3;
+  /* semantic */
+  --info: #0b7285; --info-bg: #e3f6fa; --info-border: #b4e2ec;
+  --warn: #9a5a08; --warn-bg: #fdf3e1; --warn-border: #f0d9a8;
+  --danger: #b42318; --danger-bg: #fdecea; --danger-border: #f2b8b2;
+  --success: #17703f; --success-bg: #e6f4ec; --success-border: #b6dfc6;
+
+  /* typography */
+  --font: "Manrope Variable", "Manrope", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --fs-display: clamp(2rem, 1.4rem + 2vw, 3rem); --fs-h1: clamp(1.6rem, 1.3rem + 1vw, 2.1rem);
+  --fs-h2: 1.25rem; --fs-h3: 1.05rem; --fs-body: 0.95rem; --fs-sm: 0.84rem; --fs-xs: 0.74rem; --fs-stat: 2rem;
+  --lh-tight: 1.2; --lh-body: 1.6;
+
+  /* spacing (4px scale) */
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 20px; --sp-6: 24px; --sp-8: 32px; --sp-10: 40px; --sp-12: 48px;
+  /* radius */
+  --r-sm: 8px; --r-md: 12px; --r-lg: 16px; --r-xl: 22px; --r-pill: 999px;
+  /* elevation */
+  --sh-1: 0 1px 2px rgba(26, 24, 70, .06);
+  --sh-2: 0 2px 8px rgba(26, 24, 70, .06), 0 1px 2px rgba(26, 24, 70, .05);
+  --sh-3: 0 12px 32px rgba(30, 27, 90, .12), 0 2px 6px rgba(30, 27, 90, .06);
+  --ring: 0 0 0 3px rgba(99, 102, 241, .35);
+
+  /* motion */
+  --ease: cubic-bezier(.22, .8, .24, 1); --dur-fast: 120ms; --dur: 220ms; --dur-slow: 420ms;
+
+  /* layout */
+  --sidebar-w: 264px; --sidebar-w-collapsed: 76px; --topbar-h: 64px; --bottomnav-h: 64px;
+  /* breakpoints (documentation: media queries use these literals): tablet 900px, mobile 640px */
+}

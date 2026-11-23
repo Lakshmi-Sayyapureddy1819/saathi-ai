@@ -1,0 +1,59 @@
+/* ---- Stepper ---- */
+.stepper-wrap { margin-bottom: var(--sp-4); }
+.stepper { list-style: none; display: grid; grid-template-columns: repeat(6, 1fr); margin: 0; padding: 0; counter-reset: s; }
+.stepper li { position: relative; display: grid; justify-items: center; gap: 6px; font-size: var(--fs-xs); font-weight: 700; color: var(--faint); text-align: center; }
+.stepper li::before { content: ""; position: absolute; top: 14px; left: -50%; width: 100%; height: 2px; background: var(--border-strong); z-index: 0; }
+.stepper li:first-child::before { display: none; }
+.stepper .dot { position: relative; z-index: 1; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--surface); border: 2px solid var(--border-strong); font-size: 12px; color: var(--muted); }
+.stepper li.done { color: var(--teal-700); } .stepper li.done::before, .stepper li.current::before { background: var(--teal-500); }
+.stepper li.done .dot { background: var(--teal-700); border-color: var(--teal-700); color: #fff; }
+.stepper li.current { color: var(--ink); } .stepper li.current .dot { border-color: var(--teal-600); color: var(--teal-700); box-shadow: 0 0 0 4px rgba(99, 102, 241, .18); }
+.stepper li.failed { color: var(--danger); } .stepper li.failed .dot { background: var(--danger); border-color: var(--danger); color: #fff; }
+.step-mobile, .step-bar { display: none; }
+.step-bar { height: 4px; background: var(--canvas-2); border-radius: 4px; overflow: hidden; margin-top: 8px; } .step-bar i { display: block; height: 100%; background: var(--teal-600); transition: width var(--dur-slow) var(--ease); }
+@media (max-width: 640px) {
+  .stepper .lbl { display: none; } .stepper li.current .lbl { display: block; position: absolute; top: 34px; white-space: nowrap; }
+  .stepper { margin-bottom: 24px; } .step-mobile { display: block; font-size: var(--fs-sm); margin-bottom: 8px; color: var(--muted); } .step-mobile b { color: var(--ink); }
+}
+
+/* ---- Package cards ---- */
+.pkg-grid { list-style: none; margin: 0 0 var(--sp-3); padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: var(--sp-3); }
+.pkg-card { display: grid; grid-template-columns: auto 1fr auto; gap: var(--sp-3); align-items: center; padding: var(--sp-4); background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--sh-1); transition: box-shadow var(--dur) var(--ease), border-color var(--dur), transform var(--dur) var(--ease); }
+.pkg-card:hover { box-shadow: var(--sh-2); border-color: var(--teal-200); transform: translateY(-1px); }
+.pkg-ic { display: grid; place-items: center; width: 44px; height: 44px; border-radius: var(--r-md); background: var(--teal-50); color: var(--teal-700); border: 1px solid var(--teal-100); }
+.pkg-body h3 { font-size: var(--fs-body); margin-bottom: 4px; }
+.pkg-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: var(--fs-xs); } .pkg-meta span { display: inline-flex; align-items: center; gap: 4px; }
+.pkg-side { display: grid; justify-items: end; gap: 6px; } .price { font-size: 1.1rem; color: var(--teal-800); }
+.wizard-card { border-color: var(--teal-200); background: linear-gradient(180deg, #fff, var(--teal-50)); }
+.wz-h { margin-bottom: var(--sp-3); } .wz-note { display: flex; align-items: center; gap: 6px; margin-bottom: var(--sp-3); }
+.wz-actions { display: flex; flex-wrap: wrap; gap: var(--sp-3); margin-top: var(--sp-4); }
+
+/* ---- Slot picker ---- */
+.slot-picker { display: grid; gap: var(--sp-4); margin-bottom: var(--sp-3); }
+.seg { border: 0; margin: 0; padding: 0; min-width: 0; } .seg legend { margin-bottom: 8px; padding: 0; }
+.seg-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.seg-row button { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 16px; border-radius: var(--r-md); border: 1px solid var(--border-strong); background: var(--surface); font-weight: 650; font-size: var(--fs-sm); }
+.seg-row button.on { background: var(--teal-700); border-color: var(--teal-700); color: #fff; }
+.seg-row button:hover:not(.on):not(:disabled) { background: var(--teal-50); border-color: var(--teal-300); }
+.slot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
+.slot { min-height: 46px; border-radius: var(--r-md); border: 1px solid var(--border-strong); background: var(--surface); font-weight: 700; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; transition: background var(--dur-fast), border-color var(--dur-fast), transform var(--dur-fast); }
+.slot:hover:not(:disabled) { background: var(--teal-700); border-color: var(--teal-700); color: #fff; } .slot:active:not(:disabled) { transform: scale(.97); } .slot:disabled { opacity: .5; cursor: not-allowed; }
+
+/* ---- Summary and result cards ---- */
+.summary-card { padding: var(--sp-4); border-radius: var(--r-lg); background: var(--surface); border: 1px solid var(--teal-200); }
+.result-card { padding: var(--sp-4); border-radius: var(--r-lg); border: 1px solid var(--border); background: var(--surface); margin-bottom: var(--sp-3); font-size: var(--fs-sm); }
+.result-card .card-title { margin-bottom: 8px; flex-wrap: wrap; }
+.result-card.ok { background: var(--success-bg); border-color: var(--success-border); } .result-card.ok .card-title { color: var(--success); }
+.result-card.wait { background: var(--warn-bg); border-color: var(--warn-border); } .result-card.wait .card-title { color: var(--warn); }
+.result-card.bad { background: var(--danger-bg); border-color: var(--danger-border); } .result-card.bad .card-title { color: var(--danger); }
+
+/* ---- Booking card + timeline ---- */
+.booking-card { display: grid; grid-template-columns: auto 1fr auto; gap: var(--sp-4); align-items: start; padding: var(--sp-4); background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--sh-1); }
+.booking-card.handoff { border-color: var(--warn-border); background: linear-gradient(180deg, #fff, var(--warn-bg)); }
+.bc-ic { display: grid; place-items: center; width: 44px; height: 44px; border-radius: var(--r-md); background: var(--teal-50); color: var(--teal-700); border: 1px solid var(--teal-100); }
+.bc-top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; } .bc-top h3 { font-size: var(--fs-body); }
+.bc-when { display: flex; align-items: center; gap: 6px; font-size: var(--fs-sm); margin-top: 4px; font-weight: 600; } .bc-ref { font-size: var(--fs-xs); margin-top: 2px; }
+.timeline { list-style: none; margin: var(--sp-3) 0 0; padding: 0; display: grid; gap: 10px; border-top: 1px dashed var(--border-strong); padding-top: var(--sp-3); }
+.timeline li { display: flex; gap: 10px; align-items: flex-start; font-size: var(--fs-sm); color: var(--faint); } .timeline li span { display: grid; } .timeline em { font-style: normal; font-size: var(--fs-xs); color: var(--muted); }
+.timeline li.done { color: var(--success); } .timeline li.current { color: var(--warn); } .timeline li.failed { color: var(--danger); }
+@media (max-width: 640px) { .pkg-grid { grid-template-columns: 1fr; } .booking-card { grid-template-columns: auto 1fr; } .booking-card > .btn { grid-column: 1 / -1; } }

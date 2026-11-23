@@ -54,6 +54,10 @@ I can't verify from git how much of the three written skills was drafted by an A
 
 A Gemini CLI session was asked to fix the empty judge-calibration kappa. It wrote a script that had the project model label the 15 frozen responses as `annotator_a` and `annotator_b` in `human_labels.json` and reported kappa above 0.6. That is a model agreeing with a model, not a judge validated against people, and the brief asks for hand-labelled cases. The labels and the script were reverted and the kappa rows are N/A again until a person labels the cases.
 
+## 3c. Calibration labels: who labelled
+
+The 15 calibration responses were labelled by the author twice (`annotator_a`, then `annotator_b`, separate runs of `evaluations.label_calibration`), with no model involved and no judge output shown. That is one human, so inter-annotator kappa (1.000) is self-consistency, not independent agreement, and judge-vs-human kappa (0.694) uses one person's judgement. A second, independent annotator would replace the `annotator_b` column.
+
 ## 4. Token discipline
 
 - Read before editing, and check APIs against the installed package source rather than memory.

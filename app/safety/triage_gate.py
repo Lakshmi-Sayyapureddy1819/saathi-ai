@@ -4,18 +4,26 @@ import logging
 from typing import Tuple, Dict
 
 from app.observability.redact import redact
+from app.safety.alerts import dispatch_emergency
 from app.workflow.replies import MSG
 
-# --- Mock Twilio Dispatcher ---
+# --- Care-team alert (real channels: Telegram / e-mail / Twilio, see app/safety/alerts.py) ---
 def dispatch_emergency_sms(member_id: str, details: str):
-    """Mocks a Twilio API call to dispatch an emergency SMS.
+    """Queue an emergency alert to the care team on every configured channel; never blocks, never raises.
+
+    (Name kept for the callers; delivery is no longer a mock. With no channel configured it logs CRITICAL only, which
+    APP_ENV=production refuses to start with.)
 
     PRIVACY: `details` must never contain the member's own words (health data). Callers pass the crisis category
     and `redact(user_text)` (length + opaque per-process tag), which is enough to correlate and triage.
     """
-    alert = f"[SAFETY GATE] RED CRISIS for member {member_id} -> emergency contacts notified ({details})"
-    logging.critical("Emergency SMS dispatched: %s", alert)
-    return {"status": "sms_dispatched", "details": details}
+    category, _, tag = details.partition(";")
+    logging.critical("Emergency alert queued for member %s (%s; %s)", member_id, category.strip(), tag.strip())
+    try:
+        dispatch_emergency(member_id, category.strip(), tag.strip())
+    except Exception:  # noqa: BLE001 - the member's emergency reply must never depend on the alert pipeline
+        logging.critical("could not queue the emergency alert for member %s (%s)", member_id, category, exc_info=True)
+    return {"status": "alert_queued", "details": details}
 
 # --- Compiled Regex for RED_CRISIS Flags ---
 # Using \b for word boundaries to avoid matching substrings in larger words.
@@ -73,11 +81,22 @@ COMPILED_RED_FLAGS = {
 
 PATTERNS_RED_CRISIS = COMPILED_RED_FLAGS
 
+# The LLM second stage also flags personal medical-safety questions ("is it safe for someone with high blood pressure?"),
+# which the diagnosis wording below does not fit. Same deterministic rule (no medical advice), accurate wording.
+YELLOW_PERSONAL_SAFETY_MESSAGE = (
+    "I can't give personal medical advice or a diagnosis, so I can't say whether this is safe for you; your doctor can. "
+    "I can tell you what our program library says about who should avoid a practice, or help you book a lab test. "
+    "What would you like?")
+
 # --- Compiled Regex for YELLOW_WARNING Flags (No Diagnosis Rule) ---
 PATTERNS_YELLOW_WARNING = {
     "DIAGNOSIS_REQUEST": re.compile(
         r"\b("
-        r"do\s+i\s+(?:have|got|hav)\b"
+        # "do I have a checkup due / any appointment / a booking ..." asks about the member's own admin records, not
+        # about a condition. Only these explicit administrative nouns are exempt; "do I have a tumour" still matches.
+        r"do\s+i\s+(?:have|got|hav)\b(?!\s+(?:an?\s+|any\s+|my\s+|the\s+|upcoming\s+|pending\s+)*"
+        r"(?:check-?ups?|appointments?|bookings?|lab\s+tests?|tests?\s+(?:booked|due|scheduled)|packages?|reports?|"
+        r"programs?|goals?|slots?|sessions?|reminders?|plans?|due|pending|upcoming)\b)"
         r"|(?:if|whether)\s+i\s+(?:have|got|am\s+suffering\s+from)\b"
         r"|am\s+i\s+(?:suffering\s+from|diabetic|sick|ill|dying)"
         r"|(?:is|could|might|can)\s+(?:this|it|that)\s+(?:(?:be|mean|a\s+sign\s+of)\s+)?(?:a\s+|an\s+)?"
@@ -161,12 +180,25 @@ def evaluate_safety_gate(user_text: str, member_id: str = "MEM_UNKNOWN", model_c
     # Fast path: transactional booking, slot, confirmation or package selection does not need second-stage LLM
     if _TRANSACTIONAL_OR_SHORT.match(user_text.strip()):
         return (True, "GREEN_NORMAL", {"message": "Input is within normal operational parameters."})
+
+    # Fast path: general wellness/lifestyle queries with no crisis or diagnosis intent do not need second-stage LLM
+    if re.search(r"\b(yoga|asana|pranayama|surya\s+namaskar|anulom\s+vilom|kapalbhati|meditation|dhyan|breathing|"
+                 r"diet|food|nutrition|calorie|recipe|khana|aahar|sleep|neend|stress|exercise|workout|walk|"
+                 r"hydration|water|paani|weight|lifestyle|wellness)\b", user_text, re.I):
+        return (True, "GREEN_NORMAL", {"message": "Input is within normal operational parameters."})
             
     # 3. LLM second stage
     if model_client:
         prompt = SAFETY_PROMPT.format(user_text=user_text)
         try:
-            llm_result = model_client.call_model(prompt).strip()
+            from google.adk.models import LlmRequest
+            from google.genai.types import Content, Part
+            from app.workflow.gateway import ADKModelGateway
+
+            gateway = model_client if isinstance(model_client, ADKModelGateway) else ADKModelGateway(client=model_client)
+            req = LlmRequest(contents=[Content(role="user", parts=[Part(text=prompt)])], model="gateway")
+            resp = gateway.generate_request(req)
+            llm_result = ("".join(p.text for p in resp.content.parts if p.text) if resp.content and resp.content.parts else "").strip()
             if "RED_CRISIS" in llm_result:
                 logging.warning(f"RED_CRISIS Triggered by LLM for member {member_id}")
                 dispatch_emergency_sms(member_id, f"LLM_ESCALATION; message {redact(user_text)}")
@@ -174,7 +206,7 @@ def evaluate_safety_gate(user_text: str, member_id: str = "MEM_UNKNOWN", model_c
             if "YELLOW_WARNING" in llm_result:
                 logging.info(f"YELLOW_WARNING Triggered by LLM for member {member_id}")
                 payload = {
-                    "message": "I understand you're looking for answers, but as an AI assistant, I can't provide a medical diagnosis. The best course of action is to get a proper diagnostic test. I can help you book a lab package that covers these symptoms. Would you like to see some options?",
+                    "message": YELLOW_PERSONAL_SAFETY_MESSAGE,
                     "action": "steer_to_diagnostics"
                 }
                 return (True, "YELLOW_WARNING", payload)

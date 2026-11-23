@@ -1,0 +1,49 @@
+/* Wellness backdrop (components/shell/Backdrop.tsx). Loaded last; replaces the aurora/sky experiments. Calm, clinical-clean, human. */
+.backdrop { --px: 0; --py: 0; position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; }
+.aurora { display: none; }
+.layer { position: absolute; inset: 0; transition: transform .8s var(--ease); }
+
+/* base: clean, calm and bright, with a faint cool wash at the top and a warm hint at the bottom */
+.bd-calm { position: absolute; inset: 0; background:
+  radial-gradient(70% 45% at 90% -5%, rgba(129, 140, 248, .18), transparent 70%),
+  radial-gradient(55% 40% at 0% 100%, rgba(244, 167, 196, .14), transparent 70%),
+  linear-gradient(180deg, #f5f7ff 0%, #f8f8fe 50%, #fcf9fc 100%); }
+
+/* breathing rings: expand and contract on an 8s cycle, like a guided-breathing exercise */
+.breath { transform: translate3d(calc(var(--px) * -10px), calc(var(--py) * -8px), 0); }
+.breath .ring { position: absolute; border-radius: 50%; border: 1.5px solid rgba(99, 102, 241, .2); animation: breathe 8s ease-in-out infinite; will-change: transform, opacity; }
+.breath.b-a .ring { width: 340px; height: 340px; right: calc(8% - 170px * (var(--s) - 1)); top: calc(14% - 170px * (var(--s) - 1)); transform-origin: center; background: radial-gradient(circle, rgba(165, 180, 252, .1), transparent 70%); }
+.breath.b-b .ring { width: 240px; height: 240px; left: calc(6% - 120px * (var(--s) - 1)); bottom: calc(10% - 120px * (var(--s) - 1)); border-color: rgba(168, 85, 247, .18); }
+.breath .ring { scale: var(--s); }
+@keyframes breathe { 0%, 100% { transform: scale(.86); opacity: .45; } 50% { transform: scale(1.08); opacity: 1; } }
+
+/* line icons float and sway; sparse and faint so they never compete with content */
+.wellicons { transform: translate3d(calc(var(--px) * -18px), calc(var(--py) * -12px), 0); }
+.wicon { position: absolute; display: block; color: #6366f1; opacity: .15; animation: wfloat ease-in-out infinite; will-change: transform; }
+.wicon:nth-child(3n) { color: #a855f7; opacity: .13; } .wicon:nth-child(4n) { color: #0ea5e9; opacity: .14; } .wicon:nth-child(5n) { color: #ec4899; opacity: .11; }
+.wicon svg { display: block; }
+@keyframes wfloat { 0%, 100% { transform: translate3d(0, 0, 0) rotate(var(--tilt)); } 50% { transform: translate3d(0, -26px, 0) rotate(calc(var(--tilt) * -1)); } }
+
+/* heartbeat line: a faint baseline with a brighter pulse travelling along it */
+.ecg { position: absolute; left: 0; right: 0; bottom: 9%; width: 100%; height: 150px; }
+.ecg path { fill: none; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.ecg-base { stroke: rgba(99, 102, 241, .12); stroke-width: 2; }
+.ecg-run { stroke: rgba(99, 102, 241, .5); stroke-width: 2.5; stroke-dasharray: 9 91; animation: ecg-go 6s linear infinite; filter: drop-shadow(0 0 6px rgba(99, 102, 241, .6)); }
+@keyframes ecg-go { from { stroke-dashoffset: 100; } to { stroke-dashoffset: 0; } }
+
+/* glass cards let the calm backdrop show through a touch */
+.card, .qa, .pkg-card, .booking-card, .stat, .scenario, .prompt, .summary-card { background-color: rgba(255, 255, 255, .78); }
+.chat-main, .chat-hist { background-color: rgba(255, 255, 255, .84); }
+
+@media (max-width: 640px) { .wellicons .wicon:nth-child(n+8), .ecg { display: none; } .breath.b-b { display: none; } }
+
+/* a little more presence: still calm, but the motion is noticeable in the margins */
+.wicon { opacity: .26; } .wicon:nth-child(3n) { opacity: .22; } .wicon:nth-child(4n) { opacity: .24; } .wicon:nth-child(5n) { opacity: .2; }
+.breath .ring { border-color: rgba(99, 102, 241, .32); } .breath.b-b .ring { border-color: rgba(168, 85, 247, .3); }
+.ecg-base { stroke: rgba(99, 102, 241, .2); }
+
+/* performance: cards are nearly opaque now, so the expensive backdrop blur is dropped everywhere except the sticky top bar */
+.card, .qa, .pkg-card, .booking-card, .stat, .scenario, .prompt, .summary-card, .chat-main, .chat-hist, .welcome { -webkit-backdrop-filter: none; backdrop-filter: none; }
+
+/* no circles: the breathing rings were removed */
+.breath { display: none; }

@@ -1,0 +1,153 @@
+/* Motion and finishing layer. Transform/opacity only; everything is neutralised by the reduced-motion rule in base.css. */
+
+/* ---- Ambient colour glows: two huge blurred blobs drifting slowly behind everything (GPU-composited, no layout cost) ---- */
+body::after {
+  content: ""; position: fixed; z-index: -1; pointer-events: none; inset: -20%;
+  background:
+    radial-gradient(40% 36% at 78% 18%, rgba(168, 85, 247, .13), transparent 70%),
+    radial-gradient(38% 34% at 16% 84%, rgba(99, 102, 241, .14), transparent 70%),
+    radial-gradient(30% 28% at 60% 70%, rgba(56, 189, 248, .08), transparent 70%);
+  animation: drift 32s ease-in-out infinite alternate; will-change: transform;
+}
+@keyframes drift { from { transform: translate3d(-2%, -1%, 0) scale(1); } to { transform: translate3d(3%, 2%, 0) scale(1.06); } }
+
+/* ---- Brand gradient + glow ---- */
+:root { --grad-brand: linear-gradient(135deg, #4a52d6 0%, #6366f1 45%, #a855f7 100%); --glow: 0 8px 24px rgba(99, 102, 241, .35); }
+.btn.primary, .send-btn, .seg-row button.on, .chip.active { background: var(--grad-brand); border-color: transparent; }
+.btn.primary:hover:not(:disabled) { background: var(--grad-brand); filter: brightness(1.06); box-shadow: var(--glow); transform: translateY(-1px); }
+.bubble.user { background: var(--grad-brand); box-shadow: 0 4px 14px rgba(99, 102, 241, .25); }
+.stepper li.done .dot { background: var(--grad-brand); border-color: transparent; }
+.step-bar i { background: var(--grad-brand); }
+.avatar.brand { background: var(--grad-brand); box-shadow: 0 2px 8px rgba(99, 102, 241, .35); }
+.assistant-card { background: radial-gradient(500px 300px at 0% 0%, rgba(168, 85, 247, .42), transparent 70%), radial-gradient(420px 260px at 100% 100%, rgba(99, 102, 241, .35), transparent 70%), linear-gradient(160deg, #2a2a85, #14123a); }
+.voice-stage { background: radial-gradient(700px 420px at 50% 38%, rgba(99, 102, 241, .42), transparent 70%), radial-gradient(500px 300px at 90% 100%, rgba(168, 85, 247, .22), transparent 70%), linear-gradient(170deg, #2a2a85, #14123a 72%); }
+.sidebar { background: radial-gradient(420px 260px at 0% 0%, rgba(168, 85, 247, .32), transparent 70%), radial-gradient(360px 300px at 100% 100%, rgba(99, 102, 241, .25), transparent 70%), linear-gradient(180deg, #1e1b5a, #14123a); }
+.orb .core, .ac-orb i:nth-child(3) { background: radial-gradient(circle at 34% 28%, #e0e7ff 0%, #818cf8 36%, #6d4fe0 70%, #3a3fb5 100%); }
+.orb-error .core { background: radial-gradient(circle at 34% 28%, #f7b4ac, #c9392c 50%, #6a1710); }
+.orb-interrupted .core { background: radial-gradient(circle at 34% 28%, #fbe7b8, #d99a2b 45%, #7a4a05); }
+
+/* animated gradient headline on the Overview hero */
+.welcome .display {
+  background: linear-gradient(100deg, #1e1b5a 0%, #4a52d6 35%, #a855f7 60%, #4a52d6 85%, #1e1b5a 100%); background-size: 220% 100%;
+  -webkit-background-clip: text; background-clip: text; color: transparent; -webkit-text-fill-color: transparent; animation: gradshift 9s ease-in-out infinite alternate;
+}
+@keyframes gradshift { to { background-position: 100% 0; } }
+
+/* ---- Button sheen sweep ---- */
+.btn.primary, .send-btn, .vc-start { position: relative; overflow: hidden; }
+.btn.primary::after, .vc-start::after { content: ""; position: absolute; inset: 0; background: linear-gradient(105deg, transparent 35%, rgba(255, 255, 255, .35) 50%, transparent 65%); transform: translateX(-120%); transition: transform .7s var(--ease); pointer-events: none; }
+.btn.primary:hover:not(:disabled)::after, .vc-start:hover:not(:disabled)::after { transform: translateX(120%); }
+.send-btn:not(:disabled) { box-shadow: 0 4px 14px rgba(99, 102, 241, .4); animation: glowpulse 2.8s ease-in-out infinite; }
+@keyframes glowpulse { 50% { box-shadow: 0 4px 22px rgba(168, 85, 247, .55); } }
+
+/* ---- Sidebar: sliding active pill, icon nudge ---- */
+.sb-link { position: relative; }
+.sb-link.active { background: transparent; box-shadow: none; }
+.sb-pill { position: absolute; inset: 0; z-index: 0; border-radius: var(--r-md); background: linear-gradient(135deg, rgba(255, 255, 255, .2), rgba(255, 255, 255, .08)); box-shadow: inset 3px 0 0 #a5b4fc, 0 4px 14px rgba(0, 0, 0, .2); }
+.sb-ic, .sb-lbl { position: relative; z-index: 1; transition: transform var(--dur) var(--ease); }
+.sb-link:hover .sb-ic { transform: scale(1.12) rotate(-4deg); }
+.sb-link:hover .sb-lbl { transform: translateX(2px); }
+a.brand:hover svg { animation: wiggle .7s var(--ease); }
+@keyframes wiggle { 30% { transform: rotate(-8deg) scale(1.06); } 60% { transform: rotate(5deg) scale(1.06); } }
+
+/* ---- Page reveals: children of a page stack rise in one after another (skips elements framer-motion already animates) ---- */
+.page > .stack > :not([style]) { animation: rise .55s var(--ease) both; }
+.page > .stack > :nth-child(2) { animation-delay: .06s; } .page > .stack > :nth-child(3) { animation-delay: .12s; } .page > .stack > :nth-child(4) { animation-delay: .18s; }
+.page > .stack > :nth-child(5) { animation-delay: .24s; } .page > .stack > :nth-child(n+6) { animation-delay: .3s; }
+.pkg-grid > li, .grid-3 > *, .qa-grid > *, .scenario-grid > * { animation: rise .5s var(--ease) both; }
+.pkg-grid > li:nth-child(2), .grid-3 > :nth-child(2), .qa-grid > :nth-child(2), .scenario-grid > :nth-child(2) { animation-delay: .05s; }
+.pkg-grid > li:nth-child(3), .grid-3 > :nth-child(3), .qa-grid > :nth-child(3), .scenario-grid > :nth-child(3) { animation-delay: .1s; }
+.pkg-grid > li:nth-child(4), .grid-3 > :nth-child(4), .qa-grid > :nth-child(4) { animation-delay: .15s; }
+.pkg-grid > li:nth-child(n+5), .grid-3 > :nth-child(n+5), .qa-grid > :nth-child(n+5) { animation-delay: .2s; }
+@keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+
+/* ---- Hover life ---- */
+.qa:hover:not(:disabled) .qa-ic { transform: scale(1.1) rotate(-6deg); background: var(--grad-brand); color: #fff; border-color: transparent; }
+.qa-ic, .pkg-ic, .bc-ic { transition: transform var(--dur) var(--ease), background var(--dur), color var(--dur); }
+.pkg-card:hover .pkg-ic { transform: scale(1.08); background: var(--grad-brand); color: #fff; border-color: transparent; }
+.prompt:hover:not(:disabled) svg { transform: scale(1.15) rotate(-6deg); } .prompt svg { transition: transform var(--dur) var(--ease); }
+.slot:hover:not(:disabled) { background: var(--grad-brand); box-shadow: var(--glow); }
+.ce-ic { background: var(--grad-brand); color: #fff; box-shadow: var(--glow); animation: floaty 5s ease-in-out infinite; }
+@keyframes floaty { 50% { transform: translateY(-6px); } }
+.assistant-card .ac-orb { animation: floaty 6s ease-in-out infinite; }
+
+/* ---- Success moments ---- */
+.result-card.ok > .card-title > svg:first-child, .card-msg.ok .cm-head > svg:first-child { animation: pop .55s var(--ease) both; }
+@keyframes pop { 0% { transform: scale(.2) rotate(-30deg); opacity: 0; } 70% { transform: scale(1.18) rotate(4deg); opacity: 1; } 100% { transform: scale(1); } }
+.card-msg.emergency { animation: alertpulse 2.4s ease-in-out 3; }
+@keyframes alertpulse { 50% { box-shadow: 0 0 0 8px rgba(180, 35, 24, .14); } }
+
+/* topbar status pill: gentle live dot when the session is active */
+[data-testid="status-pill"].brand svg { animation: livepulse 2.2s ease-in-out infinite; }
+@keyframes livepulse { 50% { transform: scale(1.25); opacity: .7; } }
+
+/* =====================================================================
+   Page backdrop (components/shell/Backdrop.tsx)
+   ===================================================================== */
+.backdrop { position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; }
+.backdrop::before { content: ""; position: absolute; inset: 0; background-image: radial-gradient(rgba(74, 82, 214, .2) 1px, transparent 1.3px); background-size: 28px 28px; -webkit-mask-image: radial-gradient(75% 65% at 55% 35%, #000 10%, transparent 75%); mask-image: radial-gradient(75% 65% at 55% 35%, #000 10%, transparent 75%); }
+.bd-shapes { position: absolute; inset: 0; width: 100%; height: 100%; }
+.bd-ring circle { fill: none; stroke: #6366f1; stroke-opacity: .13; stroke-width: 1.5; }
+.bd-ring, .bd-cross { transform-box: fill-box; transform-origin: center; }
+.bd-ring.r-a { animation: spin-slow 80s linear infinite; } .bd-ring.r-b { animation: spin-slow 110s linear infinite reverse; }
+.bd-ring.r-a circle:nth-child(2) { stroke-dasharray: 6 10; } .bd-ring.r-b circle:nth-child(1) { stroke-dasharray: 4 12; }
+.bd-cross path { stroke: #a855f7; stroke-opacity: .28; stroke-width: 3; stroke-linecap: round; fill: none; }
+.bd-cross.c-a { animation: float-y 9s ease-in-out infinite; } .bd-cross.c-b { animation: float-y 11s ease-in-out -3s infinite; } .bd-cross.c-c { animation: float-y 13s ease-in-out -6s infinite; }
+.bd-ecg { fill: none; stroke: #6366f1; stroke-opacity: .22; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 16 84; animation: ecg-run 10s linear infinite; }
+@keyframes spin-slow { to { transform: rotate(360deg); } }
+@keyframes float-y { 50% { transform: translateY(-18px) rotate(12deg); } }
+@keyframes ecg-run { from { stroke-dashoffset: 100; } to { stroke-dashoffset: 0; } }
+
+/* =====================================================================
+   Navigation effects
+   ===================================================================== */
+/* top route-progress bar that sweeps on every page change */
+.route-bar { position: fixed; z-index: 120; top: 0; left: 0; right: 0; height: 3px; transform-origin: left; background: var(--grad-brand); box-shadow: 0 0 12px rgba(168, 85, 247, .7); pointer-events: none; }
+
+/* sidebar: staggered entrance, gradient wipe on hover, glowing active icon */
+.sb-list > li { animation: slide-in .5s var(--ease) both; }
+.sb-list > li:nth-child(2) { animation-delay: .04s; } .sb-list > li:nth-child(3) { animation-delay: .08s; } .sb-list > li:nth-child(4) { animation-delay: .12s; }
+.sb-list > li:nth-child(5) { animation-delay: .16s; } .sb-list > li:nth-child(6) { animation-delay: .2s; } .sb-list > li:nth-child(7) { animation-delay: .24s; } .sb-list > li:nth-child(8) { animation-delay: .28s; }
+@keyframes slide-in { from { opacity: 0; transform: translateX(-14px); } to { opacity: 1; transform: none; } }
+.sb-link { overflow: hidden; }
+.sb-link::before { content: ""; position: absolute; inset: 0; z-index: 0; background: linear-gradient(90deg, rgba(165, 180, 252, .28), rgba(168, 85, 247, .12) 60%, transparent); transform: translateX(-101%); transition: transform .35s var(--ease); }
+.sb-link:hover::before { transform: none; }
+.sb-link.active .sb-ic { filter: drop-shadow(0 0 6px rgba(196, 203, 255, .9)); color: #fff; }
+.sb-link.active .sb-lbl { font-weight: 800; letter-spacing: .005em; }
+.sb-link.active::after { content: ""; position: absolute; right: 12px; top: 50%; width: 6px; height: 6px; margin-top: -3px; border-radius: 50%; background: #c4cbff; box-shadow: 0 0 10px #a5b4fc; z-index: 1; animation: livepulse 2.4s ease-in-out infinite; }
+.sidebar.collapsed .sb-link.active::after { display: none; }
+
+/* topbar: soft gradient hairline */
+.topbar { border-image: linear-gradient(90deg, transparent, rgba(99, 102, 241, .35), rgba(168, 85, 247, .3), transparent) 1; }
+
+/* mobile bottom nav: sliding indicator + icon hop */
+.bottom-nav a { position: relative; }
+.bn-ind { position: absolute; top: 0; left: 22%; right: 22%; height: 3px; border-radius: 0 0 4px 4px; background: var(--grad-brand); box-shadow: 0 2px 10px rgba(99, 102, 241, .6); }
+.bottom-nav a.active .bn-ic { animation: hop .45s var(--ease); color: var(--teal-600); }
+@keyframes hop { 40% { transform: translateY(-5px) scale(1.15); } }
+.bottom-nav a:active .bn-ic { transform: scale(.88); }
+
+/* tabs and chips: little lift */
+.tabs button, .chip, .seg-row button { transition: background var(--dur-fast), color var(--dur-fast), transform var(--dur-fast) var(--ease), box-shadow var(--dur-fast); }
+.tabs button:hover:not([aria-selected="true"]), .chip:hover:not(.static):not(.active):not(:disabled) { transform: translateY(-1px); }
+.tabs button[aria-selected="true"] { box-shadow: var(--sh-2), 0 0 0 1px rgba(99, 102, 241, .18); }
+
+/* =====================================================================
+   Logo animation
+   ===================================================================== */
+.logo-mark { filter: drop-shadow(0 4px 10px rgba(99, 102, 241, .45)); transition: transform var(--dur) var(--ease); }
+.logo-heart { transform-box: fill-box; transform-origin: center; animation: heartbeat 3.2s ease-in-out infinite; }
+.logo-pulse { stroke-dasharray: 100; stroke-dashoffset: 0; animation: pulse-draw 3.2s ease-in-out infinite; }
+@keyframes heartbeat { 0%, 60%, 100% { transform: scale(1); } 68% { transform: scale(1.09); } 76% { transform: scale(.98); } 84% { transform: scale(1.05); } }
+@keyframes pulse-draw { 0% { stroke-dashoffset: 100; } 45%, 90% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: -100; } }
+a.brand:hover .logo-mark { transform: rotate(-6deg) scale(1.08); }
+
+/* =====================================================================
+   Cursor spotlight on interactive cards (--mx/--my set by Backdrop.tsx)
+   ===================================================================== */
+.qa:hover:not(:disabled), .pkg-card:hover, .card.interactive:hover, .prompt:hover:not(:disabled), .scenario:hover:not(:disabled) {
+  background-image: radial-gradient(220px circle at var(--mx, 50%) var(--my, 50%), rgba(99, 102, 241, .13), transparent 70%);
+}
+.welcome { position: relative; overflow: hidden; }
+.welcome::after { content: ""; position: absolute; width: 360px; height: 360px; right: -90px; top: -120px; border-radius: 50%; background: radial-gradient(circle, rgba(168, 85, 247, .22), transparent 68%); animation: floaty 9s ease-in-out infinite; pointer-events: none; }
+.welcome > * { position: relative; z-index: 1; }

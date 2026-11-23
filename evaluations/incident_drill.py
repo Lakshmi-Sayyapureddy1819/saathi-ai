@@ -119,12 +119,33 @@ def run_booking_calls(graph: WorkflowGraph, n: int, tag: str) -> BookingRun:
     return BookingRun(calls=n, booked=booked, handed_off=handed, tool_errors=errors,
                       final_turn_ms_p50=round(statistics.median(final_ms), 0), example_trace_id=example)
 
+def run_stale_record_calls(graph: WorkflowGraph, n: int, tag: str) -> BookingRun:
+    booked = handed = errors = 0
+    final_ms: List[float] = []
+    example = ""
+    for i in range(n):
+        graph.lab_tools._booked.clear()
+        graph.lab_tools._bookings.clear()
+        s = new_session(f"{tag}{i}")
+        for j, msg in enumerate(BOOKING_CALL):
+            if j == 2 and s.booking_draft.package_id:
+                d = s.booking_draft
+                graph.lab_tools._booked.add((d.package_id, d.selected_date, d.selected_slot))
+            t = time.perf_counter()
+            out, s = execute_turn(msg, s, graph=graph)
+        final_ms.append((time.perf_counter() - t) * 1000)
+        booked += int(bool(s.member.past_bookings))
+        handed += int(s.active_node == "node_human_handoff")
+        sp = spans_of(s.trace_id)
+        errors += sum(1 for x in sp if x["name"] == "tool:book_test" and x["metadata"].get("error"))
+        example = example or s.trace_id
+    return BookingRun(calls=n, booked=booked, handed_off=handed, tool_errors=errors,
+                      final_turn_ms_p50=round(statistics.median(final_ms), 0), example_trace_id=example)
 
 def coach_trace(graph: WorkflowGraph, query: str, tag: str) -> str:
     s = new_session(tag)
     _, s = execute_turn(query, s, graph=graph)
     return s.trace_id
-
 
 def main(calls: int = 5) -> None:
     OUT.mkdir(parents=True, exist_ok=True)
@@ -149,11 +170,15 @@ def main(calls: int = 5) -> None:
     graph_mod.PROMPT_VERSION = "v1"
     bad_coach_trace = coach_trace(graph, "What yoga helps with stress?", "BC")
     graph_mod.PROMPT_VERSION = original_prompt
+    
+    print("== incident C: stale backend record ==")
+    stale_booking = run_stale_record_calls(graph, calls, "SB")
 
     trees = {"trace_A_outage.txt": spans_of(outage_booking.example_trace_id),
              "trace_baseline_booking.txt": spans_of(healthy_booking.example_trace_id),
              "trace_B_bad_prompt.txt": spans_of(bad_coach_trace),
-             "trace_baseline_coach.txt": spans_of(healthy_coach_trace)}
+             "trace_baseline_coach.txt": spans_of(healthy_coach_trace),
+             "trace_C_stale_record.txt": spans_of(stale_booking.example_trace_id)}
     for name, sp in trees.items():
         (OUT / name).write_text(render_tree(sp) + "\n", encoding="utf-8")
 
@@ -165,6 +190,13 @@ def main(calls: int = 5) -> None:
               ("`tool:book_test` spans with an error", str(healthy_booking.tool_errors), str(outage_booking.tool_errors)),
               ("Final booking turn p50 latency", f"{healthy_booking.final_turn_ms_p50:.0f} ms",
                f"{outage_booking.final_turn_ms_p50:.0f} ms")]
+               
+    diff_c = [("Booking success (booked / calls)", pct(healthy_booking.booked, calls), pct(stale_booking.booked, calls)),
+              ("Handed to a care coordinator", pct(healthy_booking.handed_off, calls), pct(stale_booking.handed_off, calls)),
+              ("`tool:book_test` spans with an error", str(healthy_booking.tool_errors), str(stale_booking.tool_errors)),
+              ("Final booking turn p50 latency", f"{healthy_booking.final_turn_ms_p50:.0f} ms",
+               f"{stale_booking.final_turn_ms_p50:.0f} ms")]
+               
     f = lambda v, sfx="": "N/A" if v is None else f"{v}{sfx}"  # noqa: E731
     diff_b = [("Faithfulness (LLM judge)", f(healthy_prompt.faithfulness_pct, "%"), f(bad_prompt.faithfulness_pct, "%")),
               ("Lexical groundedness", f(healthy_prompt.lexical_groundedness_pct, "%"), f(bad_prompt.lexical_groundedness_pct, "%")),
@@ -179,13 +211,14 @@ def main(calls: int = 5) -> None:
 
     (OUT / "eval_diff.md").write_text(
         md_table("Incident A: lab API down", diff_a, "Incident") + "\n"
-        + md_table(f"Incident B: coach prompt rolled back to v1 (healthy = {original_prompt})", diff_b, "Incident (v1)"),
+        + md_table(f"Incident B: coach prompt rolled back to v1 (healthy = {original_prompt})", diff_b, "Incident (v1)") + "\n"
+        + md_table("Incident C: stale backend record", diff_c, "Incident"),
         encoding="utf-8")
     (OUT / "drill_results.json").write_text(json.dumps({
-        "healthy_booking": healthy_booking.model_dump(), "outage_booking": outage_booking.model_dump(),
+        "healthy_booking": healthy_booking.model_dump(), "outage_booking": outage_booking.model_dump(), "stale_booking": stale_booking.model_dump(),
         "healthy_prompt": healthy_prompt.model_dump(exclude={"audit"}), "bad_prompt": bad_prompt.model_dump(exclude={"audit"}),
         "trace_ids": {"A_outage": outage_booking.example_trace_id, "baseline_booking": healthy_booking.example_trace_id,
-                      "B_bad_prompt": bad_coach_trace, "baseline_coach": healthy_coach_trace}},
+                      "B_bad_prompt": bad_coach_trace, "baseline_coach": healthy_coach_trace, "C_stale_record": stale_booking.example_trace_id}},
         indent=2, ensure_ascii=False), encoding="utf-8")
 
     def html_table(rows: list, bad_label: str) -> str:
@@ -212,6 +245,9 @@ def main(calls: int = 5) -> None:
         + "<p>Eval output, healthy vs incident (12 golden wellness questions + injection suite):</p>" + html_table(diff_b, "Prompt v1")
         + waterfall_html(trees["trace_B_bad_prompt.txt"], "Trace of one coach turn under the bad prompt (see prompt_version and prompt_chars)")
         + waterfall_html(trees["trace_baseline_coach.txt"], "Same question when healthy")
+        + "<h2 id='c'>Incident C: stale backend record</h2>"
+        + "<p>Eval output, healthy vs incident (same 3-turn booking call):</p>" + html_table(diff_c, "Stale record")
+        + waterfall_html(trees["trace_C_stale_record.txt"], "Trace of one failed booking turn due to stale record (fails fast without retry)")
         + "</body></html>", encoding="utf-8")
     print((OUT / "eval_diff.md").read_text(encoding="utf-8"))
     print("trace ids:", json.dumps(json.load(open(OUT / "drill_results.json"))["trace_ids"], indent=1))

@@ -1,5 +1,5 @@
-turn                               root  +      0 ms       8.1 ms  prompt_version=v4 final_node=node_lab_booking triage=GREEN_NORMAL
-  node_safety_gate                 node  +      2 ms       6.4 ms  prompt_version=v4
-    node_intent_router             node  +      2 ms       4.7 ms  prompt_version=v4
-      node_lab_booking             node  +      2 ms       2.7 ms  prompt_version=v4
-        tool:book_test             tool  +      4 ms       0.5 ms  attempt=1 slot=09:00 AM package_id=LP_002
+turn                               root  +      0 ms       7.9 ms  prompt_version=v4 prompt_tokens=0 completion_tokens=0 cost_usd=0.0 final_node=node_lab_booking triage=GREEN_NORMAL
+  node_safety_gate                 node  +      0 ms       6.2 ms  prompt_version=v4
+    node_intent_router             node  +      1 ms       4.4 ms  prompt_version=v4
+      node_lab_booking             node  +      1 ms       2.8 ms  prompt_version=v4
+        tool:book_test             tool  +      1 ms       0.3 ms  attempt=1 slot=09:00 AM package_id=LP_002

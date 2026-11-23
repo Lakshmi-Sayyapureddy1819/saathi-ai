@@ -1,6 +1,7 @@
 """Config-driven model client (config/models.yaml) with fallback, real usage metadata and spans."""
 import os
 import logging
+import random
 import re
 import threading
 import time
@@ -101,7 +102,18 @@ def _is_transient(exc: BaseException) -> bool:
         return False
     if isinstance(exc, (requests.exceptions.ConnectionError, ConnectionError)):
         return True
-    return bool(re.search(r"returned (429|5\d\d)\b", str(exc)))
+    try:
+        from google.genai.errors import APIError, ServerError
+        if isinstance(exc, ServerError):
+            return True
+        if isinstance(exc, APIError):
+            if getattr(exc, "code", None) in (429, 500, 502, 503, 504):
+                return True
+            if getattr(exc, "code", None) and 400 <= exc.code < 500:
+                return False
+    except ImportError:
+        pass
+    return bool(re.search(r"\b(429|500|502|503|504)\b", str(exc))) or bool(re.search(r"returned (429|5\d\d)\b", str(exc)))
 
 
 def _breaker_open(model: str) -> bool:
@@ -193,10 +205,11 @@ def check_credentials(timeout: float = 8.0) -> dict[str, str]:
 
 
 class ModelClient:
-    def __init__(self, config_path: str = "config/models.yaml", quality_optimized: bool = False,
+    def __init__(self, config_path: Optional[str] = None, quality_optimized: bool = False,
                  node: Optional[str] = None):
-        """`node` selects a routing entry in models.yaml (e.g. 'voice'); defaults by quality flag."""
-        self.config_path = config_path
+        """`node` selects a routing entry in models.yaml (e.g. 'voice'); defaults by quality flag.
+        Can also be set via MODEL_CONFIG_PATH and MODEL_NODE environment variables."""
+        self.config_path = config_path or os.getenv("MODEL_CONFIG_PATH", "config/models.yaml")
         self.config = self._load_config()
         self.nodes = {n["name"]: n for n in self.config.get("routing", {}).get("nodes", [])}
         self.quality_optimized = quality_optimized
@@ -215,7 +228,7 @@ class ModelClient:
 
     def generate(self, prompt: str, trace_id: Optional[str] = None) -> LLMResult:
         trace_id = trace_id or new_trace_id()
-        node_name = self.node or ("quality_optimized" if self.quality_optimized else "cost_optimized")
+        node_name = self.node or os.getenv("MODEL_NODE") or ("quality_optimized" if self.quality_optimized else "cost_optimized")
         node_config = self.nodes.get(node_name)
         if not node_config:
             raise ValueError(f"Unknown node configuration: {node_name}")
@@ -249,52 +262,90 @@ class ModelClient:
                     _record(model_id, ok=False, error=reason)
         raise RuntimeError(f"All models failed for route {node_name}")
 
-    def _invoke_with_retry(self, model_id: str, prompt: str) -> LLMResult:
-        try:
-            return self._invoke(model_id, prompt)
-        except Exception as e:  # noqa: BLE001
-            if not _is_transient(e):
-                raise
-            logging.warning("Model %s transient failure (%s); retrying once.", model_id, _reason(e))
-            time.sleep(RETRY_DELAY_S)
-            return self._invoke(model_id, prompt)
+    def _invoke_with_retry(self, model_id: str, prompt: str, max_retries: int = 3) -> LLMResult:
+        base_delay = RETRY_DELAY_S if RETRY_DELAY_S is not None else 0.4
+        self.last_retry_delays = []
+        for attempt in range(max_retries + 1):
+            try:
+                return self._invoke(model_id, prompt)
+            except Exception as e:  # noqa: BLE001
+                if not _is_transient(e) or attempt == max_retries:
+                    raise
+                delay = (base_delay * (2 ** attempt) + random.uniform(0.01, 0.1 * (2 ** attempt))) if base_delay > 0 else 0.0
+                self.last_retry_delays.append(delay)
+                logging.warning("Model %s transient failure (%s); retrying in %.2fs (attempt %d/%d).", 
+                                model_id, _reason(e), delay, attempt + 1, max_retries)
+                if delay > 0:
+                    time.sleep(delay)
 
     def _invoke(self, model_id: str, prompt: str) -> LLMResult:
         gemini_key = os.getenv("GEMINI_API_KEY")
         openai_key = os.getenv("OPENAI_API_KEY")
         t0 = time.perf_counter()
 
-        if not gemini_key and not openai_key:
-            # Explicitly flagged mock so evals/metrics can exclude it.
+        is_ollama = "llama" in model_id.lower() or "ollama" in model_id.lower() or bool(os.getenv("OLLAMA_HOST"))
+        is_vllm = bool(os.getenv("VLLM_HOST") or os.getenv("OPENAI_BASE_URL"))
+
+        if not gemini_key and not openai_key and not is_ollama and not is_vllm:
+            from app.config import get_settings
+            if not get_settings().allow_mock_llm:
+                # Production-safe default: never hand a member made-up text. The caller turns this into the honest
+                # "I can't reach my AI model right now" reply (with a grounded excerpt) and the span records the failure.
+                raise RuntimeError("No LLM provider is configured (set GEMINI_API_KEY or OPENAI_API_KEY).")
+            # Explicitly flagged mock (ALLOW_MOCK_LLM=1: tests and offline demos) so evals/metrics can exclude it.
             return LLMResult(text=f"[MOCK:{model_id}] No API keys configured.", model=model_id, mock=True)
 
         if "gemini" in model_id.lower():
             if not gemini_key:
                 raise RuntimeError("GEMINI_API_KEY is missing.")
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_id}:generateContent"
-            r = requests.post(url, headers={"x-goog-api-key": gemini_key},
-                              json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=LLM_TIMEOUT_S)
-            if r.status_code != 200:
-                raise RuntimeError(f"Gemini API returned {r.status_code}")  # body omitted: may echo request
-            data = r.json()
-            usage = data.get("usageMetadata", {})
-            pt = usage.get("promptTokenCount", 0)
-            # Gemini 2.5 bills "thinking" tokens as output but reports them separately.
-            ct = usage.get("candidatesTokenCount", 0) + usage.get("thoughtsTokenCount", 0)
-            return LLMResult(text=data["candidates"][0]["content"]["parts"][0]["text"], model=model_id,
+            # Native Google ADK Gemini invocation using Google GenAI SDK (no raw HTTP requests.post)
+            from google.adk.models.google_llm import Gemini
+            from google.adk.models import LlmRequest
+            from google.genai.types import Content, Part
+            from app.workflow.gateway import run_coro_sync
+
+            gemini_llm = Gemini(model=model_id)
+            req = LlmRequest(contents=[Content(role="user", parts=[Part(text=prompt)])], model=model_id)
+
+            async def _call_gemini():
+                text_parts = []
+                usage = None
+                async for resp in gemini_llm.generate_content_async(req):
+                    if resp.content and resp.content.parts:
+                        for part in resp.content.parts:
+                            if part.text:
+                                text_parts.append(part.text)
+                    if resp.usage_metadata:
+                        usage = resp.usage_metadata
+                return "".join(text_parts), usage
+
+            try:
+                text, usage = run_coro_sync(_call_gemini())
+            except Exception as e:
+                from google.genai.errors import APIError
+                if isinstance(e, APIError) and getattr(e, "code", None):
+                    raise RuntimeError(f"Gemini API returned {e.code}") from e
+                raise
+
+            pt = getattr(usage, "prompt_token_count", 0) or 0
+            ct = (getattr(usage, "candidates_token_count", 0) or 0) + (getattr(usage, "thoughts_token_count", 0) or 0)
+            return LLMResult(text=text, model=model_id,
                              prompt_tokens=pt, completion_tokens=ct,
                              latency_ms=round((time.perf_counter() - t0) * 1000, 2),
                              cost_usd=_cost(model_id, pt, ct))
 
-        if "gpt" in model_id.lower():
-            if not openai_key:
+        if "gpt" in model_id.lower() or is_vllm:
+            base_url = os.getenv("VLLM_HOST") or os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+            api_key = openai_key or ("dummy-vllm-key" if is_vllm else None)
+            if not api_key:
                 raise RuntimeError("OPENAI_API_KEY is missing.")
-            r = requests.post("https://api.openai.com/v1/chat/completions",
-                              headers={"Authorization": f"Bearer {openai_key}"},
+            endpoint = f"{base_url.rstrip('/')}/chat/completions"
+            r = requests.post(endpoint,
+                              headers={"Authorization": f"Bearer {api_key}"},
                               json={"model": model_id, "messages": [{"role": "user", "content": prompt}]},
                               timeout=LLM_TIMEOUT_S)
             if r.status_code != 200:
-                raise RuntimeError(f"OpenAI API returned {r.status_code}")
+                raise RuntimeError(f"OpenAI/vLLM API returned {r.status_code}")
             data = r.json()
             usage = data.get("usage", {})
             pt, ct = usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0)
@@ -303,7 +354,7 @@ class ModelClient:
                              latency_ms=round((time.perf_counter() - t0) * 1000, 2),
                              cost_usd=_cost(model_id, pt, ct))
 
-        if "llama" in model_id.lower() or "ollama" in model_id.lower() or os.getenv("OLLAMA_HOST"):
+        if is_ollama:
             ollama_url = os.getenv("OLLAMA_HOST", "http://localhost:11434")
             r = requests.post(f"{ollama_url}/api/generate",
                               json={"model": model_id, "prompt": prompt, "stream": False},

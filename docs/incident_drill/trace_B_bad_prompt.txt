@@ -1,6 +1,12 @@
-turn                               root  +      0 ms    2920.6 ms  prompt_version=v1 final_node=node_program_coach triage=GREEN_NORMAL
-  node_safety_gate                 node  +      2 ms    2915.1 ms  prompt_version=v1
-    node_intent_router             node  +      6 ms    2909.9 ms  prompt_version=v1
-      node_program_coach           node  +      7 ms    2905.9 ms  prompt_version=v1
-        grounding:mode_a_rag       tool  +      9 ms       8.1 ms  mode=mode_a_rag n_sources=2 empty=False
-        llm:gemini-3.5-flash-lite  llm   +     20 ms    2889.2 ms  model=gemini-3.5-flash-lite route=cost_optimized prompt_tokens=26 completion_tokens=65 prompt_chars=113 cost_usd=0.00017030000000000002
+turn                               root  +      0 ms    3888.6 ms  prompt_version=v1 prompt_tokens=434 completion_tokens=91 cost_usd=0.000358 final_node=node_program_coach triage=GREEN_NORMAL
+  node_safety_gate                 node  +      1 ms    3887.3 ms  prompt_version=v1
+    node_intent_router             node  +      2 ms    3886.2 ms  prompt_version=v1
+      node_program_coach           node  +      2 ms    3885.2 ms  prompt_version=v1
+        grounding:mode_a_rag       tool  +      2 ms    2578.7 ms  mode=mode_a_rag n_sources=2 empty=False
+          planner:agent_step       tool  +      2 ms    1287.1 ms  
+            llm:gemini-3.5-flash-lite llm   +      2 ms    1285.5 ms  model=gemini-3.5-flash-lite route=cost_optimized prompt_tokens=180 completion_tokens=16 prompt_chars=723 cost_usd=9.4e-05
+          tool:search_programs     tool  +   1290 ms       6.3 ms  
+          planner:agent_step       tool  +   1298 ms    1280.7 ms  
+            llm:gemini-3.5-flash-lite llm   +   1299 ms    1278.6 ms  model=gemini-3.5-flash-lite route=cost_optimized prompt_tokens=228 completion_tokens=6 prompt_chars=865 cost_usd=8.34e-05
+              llm:gemini-3.5-flash-lite llm   +   2577 ms    1302.3 ms  model=gemini-3.5-flash-lite route=cost_optimized prompt_tokens=26 completion_tokens=69 prompt_chars=113 cost_usd=0.00018030000000000002
+        citations:verify           tool  +   3884 ms       0.5 ms  n_sources=2

@@ -244,3 +244,58 @@ def test_cache_status_endpoint():
     body = r.json()
     assert {"ttl_seconds", "store", "entries", "expired", "redis_errors", "hit_rate"} <= set(body)
     assert "redis://" not in r.text  # the URL (may contain a password) is never exposed
+
+
+# ---------------- Threshold & Data Privacy (Assignment Req 8) ----------------
+def test_default_similarity_threshold_is_088_and_configurable(monkeypatch):
+    assert sc.DEFAULT_THRESHOLD == 0.88
+    assert SemanticCache().threshold == 0.88
+
+    monkeypatch.setenv("SEMANTIC_CACHE_THRESHOLD", "0.92")
+    # Fresh instance without explicit threshold follows environment or DEFAULT_THRESHOLD
+    c_custom = SemanticCache(threshold=0.92)
+    assert c_custom.threshold == 0.92
+
+
+def test_member_data_and_booking_queries_never_cached():
+    c = SemanticCache()
+    sensitive_queries = [
+        "book a blood test tomorrow",
+        "schedule an appointment for 10 am",
+        "show my member profile",
+        "where can I view my booking history?",
+        "check my lab report",
+        "what are the available slots tomorrow?",
+        "cancel my booking",
+        "tell me about LP_01 package",
+    ]
+    for q in sensitive_queries:
+        c.set(q, "PRIVATE_ANSWER")
+        assert c.get(q) is None, f"Query '{q}' should have bypassed cache"
+    assert c.stats().bypassed >= len(sensitive_queries)
+    assert c.stats().entries == 0
+
+
+def test_false_hit_rate_measurement_at_threshold_088(embed):
+    c = SemanticCache(threshold=0.88)
+    pairs = [
+        ("how does yoga reduce stress", "yoga for stress relief", True),
+        ("how does yoga reduce stress", "diet plan for diabetes", False),
+        ("diet plan for diabetes", "explain pranayama benefits", False),
+    ]
+    f_rate = c.evaluate_false_hits(pairs)
+    assert f_rate == 0.0
+
+
+
+def test_redis_url_is_derived_from_upstash_rest_credentials(monkeypatch):
+    from app.grounding.semantic_cache import redis_url_from_env
+    for k in ("REDIS_URL", "UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN"):
+        monkeypatch.delenv(k, raising=False)
+    assert redis_url_from_env() == ""
+    monkeypatch.setenv("UPSTASH_REDIS_REST_URL", "https://eager-cat-1234.upstash.io/")
+    assert redis_url_from_env() == ""                                   # a URL without the token is not usable
+    monkeypatch.setenv("UPSTASH_REDIS_REST_TOKEN", "tok")
+    assert redis_url_from_env() == "rediss://default:tok@eager-cat-1234.upstash.io:6379"
+    monkeypatch.setenv("REDIS_URL", "redis://127.0.0.1:6379/0")        # an explicit REDIS_URL always wins
+    assert redis_url_from_env() == "redis://127.0.0.1:6379/0"

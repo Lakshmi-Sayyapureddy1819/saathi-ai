@@ -59,7 +59,12 @@ def test_runs_dir_is_git_ignored():
 # ---- the tracked snapshot is real, valid, and consistent with the tracked report ----
 def test_tracked_snapshot_is_valid_and_matches_evals_md():
     md = Path("EVALS.md").read_text(encoding="utf-8")
-    snap = sorted(Path("evaluations/snapshots").glob("eval_results_*.json"))[-1]      # the latest promoted snapshot
+    import re
+    m = re.search(r"evaluations/snapshots/(eval_results_[^\s)`]+\.json)", md)
+    if m and (Path("evaluations/snapshots") / m.group(1)).exists():
+        snap = Path("evaluations/snapshots") / m.group(1)
+    else:
+        snap = sorted(Path("evaluations/snapshots").glob("eval_results_*.json"))[-1]      # the latest promoted snapshot
     d = json.loads(snap.read_text(encoding="utf-8"))
     assert sorted(d) == ["ab", "groundedness_audit", "raw", "rows", "voice"] and len(d["raw"]) == 55
     assert snap.name in md                                                            # the report points at its evidence

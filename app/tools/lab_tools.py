@@ -12,6 +12,8 @@ from pydantic import BaseModel, ConfigDict
 
 from app.observability.redact import redact
 from app.observability.tracer import span, new_trace_id
+from app.persistence.store import Store, StoredBooking
+from app.tools.lab_backend import LabBackend, PartnerUnavailable, SimulatedLabBackend, SlotTaken, make_backend
 
 FASTING_SLOTS = ["07:00 AM", "07:30 AM", "08:00 AM", "08:30 AM"]
 REGULAR_SLOTS = ["09:00 AM", "09:30 AM", "10:00 AM", "10:30 AM", "11:00 AM"]
@@ -120,11 +122,12 @@ class BookingRecord(BaseModel):
     member_id: str
     date: Date
     slot: str
+    partner_ref: Optional[str] = None  # the partner's own reference (needed to cancel there)
 
 
 class CancelResult(BaseModel):
     model_config = ConfigDict(frozen=True)
-    status: Literal["cancelled", "not_found"]
+    status: Literal["cancelled", "not_found", "partner_unavailable"]
     booking: Optional[BookingRecord] = None
 
 
@@ -148,17 +151,37 @@ class BookingResult(BaseModel):
 
 
 class LabTools:
-    def __init__(self, packages_path: str = "data/lab_packages.json", failure_rate: Optional[float] = None):
+    def __init__(self, packages_path: str = "data/lab_packages.json", failure_rate: Optional[float] = None,
+                 backend: Optional[LabBackend] = None, store: Optional[Store] = None):
         try:
             with open(packages_path, "r", encoding="utf-8") as f:
                 self.lab_packages: List[LabPackage] = [LabPackage(**p) for p in json.load(f)]
         except FileNotFoundError:
             logging.error(f"Lab packages data file not found at {packages_path}")
             self.lab_packages = []
-        self.failure_rate = float(os.getenv("LAB_FAILURE_RATE", "0.15")) if failure_rate is None else failure_rate
-        # Schedule backend state: (package_id, date, slot) already taken.
+        rate = float(os.getenv("LAB_FAILURE_RATE", "0")) if failure_rate is None else failure_rate
+        self.backend: LabBackend = backend or make_backend(rate)
+        self.store = store  # optional durable copy of confirmed bookings; None = in-memory only (unit tests)
+        # Schedule state: (package_id, date, slot) already taken, and confirmed bookings (hydrated from the store).
         self._booked: set[tuple[str, Date, str]] = set()
         self._bookings: dict[str, BookingRecord] = {}  # booking_id -> confirmed booking
+        if self.store is not None:
+            for b in self.store.bookings():
+                rec = BookingRecord(booking_id=b.booking_id, package_id=b.package_id, package_name=b.package_name,
+                                    member_id=b.member_id, date=Date.fromisoformat(b.date), slot=b.slot,
+                                    partner_ref=b.partner_ref)
+                self._bookings[rec.booking_id] = rec
+                self._booked.add((rec.package_id, rec.date, rec.slot))
+
+    @property
+    def failure_rate(self) -> float:
+        """Injected outage rate of the SIMULATED backend (chaos tests). Always 0.0 for a real backend."""
+        return self.backend.failure_rate if isinstance(self.backend, SimulatedLabBackend) else 0.0
+
+    @failure_rate.setter
+    def failure_rate(self, value: float) -> None:
+        if isinstance(self.backend, SimulatedLabBackend):
+            self.backend.failure_rate = value
 
     def get_package(self, package_id: str) -> Optional[LabPackage]:
         return next((p for p in self.lab_packages if p.package_id == package_id), None)
@@ -255,7 +278,14 @@ class LabTools:
             if pkg is None:
                 return SlotAvailability(package_id=package_id, date=preferred_date, slots=[])
             base = FASTING_SLOTS if pkg.fasting_required else REGULAR_SLOTS
-            free = [x for x in base if (package_id, preferred_date, x) not in self._booked]
+            partner: Optional[List[str]] = None
+            try:
+                partner = self.backend.free_slots(package_id, preferred_date, base)
+            except PartnerUnavailable as e:  # degrade to our own view; the booking call re-checks at the partner
+                logging.warning("Partner slot lookup failed (%s); using local availability.", e)
+                s.set(partner_error=str(e))
+            pool = base if partner is None else partner  # the partner's list is authoritative when it reports one
+            free = [x for x in pool if (package_id, preferred_date, x) not in self._booked]
             s.set(n_slots=len(free))
             s.set_output({"free_slots": free})
             return SlotAvailability(package_id=package_id, date=preferred_date, slots=free)
@@ -273,8 +303,16 @@ class LabTools:
             if rec is None:
                 s.set(status="not_found")
                 return CancelResult(status="not_found")
+            if rec.partner_ref:
+                try:
+                    self.backend.release(rec.partner_ref)
+                except PartnerUnavailable as e:  # never claim a cancellation the partner did not make
+                    s.set(status="partner_unavailable", error=str(e))
+                    return CancelResult(status="partner_unavailable", booking=rec)
             del self._bookings[booking_id]
             self._booked.discard((rec.package_id, rec.date, rec.slot))
+            if self.store is not None:
+                self.store.delete_booking(booking_id)
             s.set(status="cancelled")
             return CancelResult(status="cancelled", booking=rec)
 
@@ -288,23 +326,35 @@ class LabTools:
                       date=str(date), attempt=attempt,
                       input={"package_id": package_id, "member_id": member_id, "slot": slot, "date": str(date)}) as s:
                 try:
-                    if random.random() < self.failure_rate:  # simulated partner-API outage
-                        raise RuntimeError("PartnerLabAPIConnectionRefused 500")
                     pkg = self.get_package(package_id)
                     if pkg is None:
                         return BookingResult(status="booking_failed", message="Invalid package_id.")
+                    taken_msg = "I'm sorry, that slot was just taken. Could you please pick another time?"
                     if (package_id, date, slot) in self._booked:
-                        return BookingResult(status="booking_failed", message="I'm sorry, that slot was just taken. Could you please pick another time?")
+                        s.set(error="SlotAlreadyBooked: slot is no longer available (stale record / conflict)")
+                        return BookingResult(status="booking_failed", message=taken_msg)
+                    # Stable across retries, so a retry after a timeout cannot create a second partner booking.
+                    try:
+                        partner = self.backend.reserve(package_id=package_id, member_id=member_id, day=date, slot=slot,
+                                                       idempotency_key=f"{member_id}:{package_id}:{date}:{slot}")
+                    except SlotTaken:
+                        s.set(error="SlotAlreadyBooked: partner reports the slot is taken")
+                        return BookingResult(status="booking_failed", message=taken_msg)
                     self._booked.add((package_id, date, slot))
                     booking_id = f"BOK_{member_id}_{random.randint(1000, 9999)}"
                     while booking_id in self._bookings:  # ids stay unique even if the random suffix repeats
                         booking_id = f"BOK_{member_id}_{random.randint(1000, 9999)}"
                     self._bookings[booking_id] = BookingRecord(booking_id=booking_id, package_id=package_id,
                                                                package_name=pkg.name, member_id=member_id,
-                                                               date=date, slot=slot)
+                                                               date=date, slot=slot, partner_ref=partner.booking_ref)
+                    if self.store is not None:
+                        self.store.put_booking(StoredBooking(booking_id=booking_id, member_id=member_id,
+                                                             package_id=package_id, package_name=pkg.name,
+                                                             date=date.isoformat(), slot=slot,
+                                                             partner_ref=partner.booking_ref))
                     return BookingResult(status="booking_confirmed", booking_id=booking_id,
                                          package_name=pkg.name, slot=slot, date=date, retry_latency_s=slept)
-                except RuntimeError as e:
+                except (RuntimeError, PartnerUnavailable) as e:
                     s.set(error=str(e))
                     logging.warning(f"book_test attempt {attempt}/{retries} failed: {e}")
             if attempt < retries:

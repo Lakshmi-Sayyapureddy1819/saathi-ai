@@ -1,5 +1,5 @@
 import type {
-  ApprovalItem, ConfigView, Member, PackageOption, Program, SessionCreated, SessionView,
+  ApprovalItem, ConfigView, GroundingModeName, Member, Readiness, PackageOption, Program, SessionCreated, SessionView,
 } from "./types";
 
 export const API_URL: string = (import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8000").replace(/\/$/, "");
@@ -40,6 +40,7 @@ const bearer = (token: string) => ({ Authorization: `Bearer ${token}` });
 
 export const api = {
   config: () => request<ConfigView>("/api/config"),
+  readiness: () => request<Readiness>("/api/readiness"),
   members: () => request<Member[]>("/api/members"),
   programs: () => request<Program[]>("/api/programs"),
   packages: (q = "") => request<PackageOption[]>(`/api/packages?q=${encodeURIComponent(q)}`),
@@ -47,8 +48,10 @@ export const api = {
     request<SessionCreated>("/api/sessions", { method: "POST", body: JSON.stringify({ member_id: memberId }) }),
   getSession: (id: string, token: string) =>
     request<SessionView>(`/api/sessions/${id}`, {}, bearer(token)),
-  send: (id: string, token: string, text: string) =>
-    request<SessionView>(`/api/sessions/${id}/messages`, { method: "POST", body: JSON.stringify({ text }) }, bearer(token)),
+  send: (id: string, token: string, text: string, channel: "web" | "voice" = "web") =>
+    request<SessionView>(`/api/sessions/${id}/messages`, { method: "POST", body: JSON.stringify({ text, channel }) }, bearer(token)),
+  setGrounding: (id: string, token: string, mode: GroundingModeName) =>
+    request<SessionView>(`/api/sessions/${id}/grounding`, { method: "POST", body: JSON.stringify({ mode }) }, bearer(token)),
   deleteSession: (id: string, token: string) =>
     request<{ deleted: boolean }>(`/api/sessions/${id}`, { method: "DELETE" }, bearer(token)),
   approvals: (coordToken: string) =>

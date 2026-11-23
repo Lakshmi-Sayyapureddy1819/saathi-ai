@@ -35,10 +35,6 @@ def run_demo():
         print(f"Last turn latency (ms): stt={last.stt_ms} graph={last.graph_ms} tts_first_chunk={last.tts_first_chunk_ms}")
 
 
-if __name__ == "__main__":
-    run_demo()
-
-
 def run_outbound_demo(member_id: str = "MEM_1001") -> None:
     """Outbound reminder call: the agent phones a member about a pending checkup and books it."""
     import json
@@ -65,3 +61,5 @@ if __name__ == "__main__":
     import sys
     if "--outbound" in sys.argv:
         run_outbound_demo()
+    else:
+        run_demo()

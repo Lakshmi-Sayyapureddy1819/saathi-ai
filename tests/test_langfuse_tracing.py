@@ -275,3 +275,56 @@ def test_io_and_trace_attributes_reach_langfuse_and_text_is_redacted(monkeypatch
     root_id = spans["turn"].context.span_id
     assert spans["tool:other"].parent.span_id == root_id and spans["tool:check_slots"].parent.span_id == root_id
     client.shutdown()
+    tr.init_langfuse(None)
+
+
+def test_conversation_metrics_recording_and_aggregation():
+    sid = f"CONV_TEST_{uuid.uuid4().hex[:8]}"
+    tid1 = tr.new_trace_id()
+    with tr.span("turn", tid1, kind="root", session_id=sid):
+        with tr.span("node_x", tid1, kind="node"):
+            with tr.span("llm:gemini-3.5-flash-lite", tid1, kind="llm", model="gemini-3.5-flash-lite") as s:
+                s.set(prompt_tokens=100, completion_tokens=50, cost_usd=0.00015)
+    
+    tid2 = tr.new_trace_id()
+    with tr.span("turn", tid2, kind="root", session_id=sid):
+        with tr.span("node_x", tid2, kind="node"):
+            with tr.span("llm:gemini-3.5-flash-lite", tid2, kind="llm", model="gemini-3.5-flash-lite") as s:
+                s.set(prompt_tokens=80, completion_tokens=40, cost_usd=0.00012)
+
+    metrics = tr.get_conversation_metrics(sid)
+    assert metrics.session_id == sid
+    assert metrics.turn_count == 2
+    assert metrics.total_prompt_tokens == 180
+    assert metrics.total_completion_tokens == 90
+    assert metrics.total_tokens == 270
+    assert abs(metrics.total_cost_usd - 0.00027) < 1e-6
+    assert metrics.total_latency_ms >= 0
+
+
+def test_report_tools_traces_tool_span():
+    from app.tools.report_tools import report_tools
+    tid = tr.new_trace_id()
+    report_text = "TSH: 2.5 uIU/mL (Normal: 0.4 - 4.0)"
+    explanation = report_tools.explain_report(report_text, tid)
+    assert explanation
+    records = _local_records(tid)
+    spans = {r["name"]: r for r in records}
+    assert "tool:explain_report" in spans
+    assert spans["tool:explain_report"]["kind"] == "tool"
+
+
+def test_voice_agent_traces_voice_stt_and_tts():
+    from app.channels.voice_agent import VoiceAgent
+    from app.workflow.state import UserSessionState, MemberProfile
+    agent = VoiceAgent(verbose=False, tts_char_delay=0.0)
+    member = MemberProfile(member_id="VOICE_M1", name="Voice User", age=45)
+    session = UserSessionState(channel="voice", member=member, active_node="start")
+    tid = tr.new_trace_id()
+    session = agent.process_voice_turn("kal subah thyroid test chahiye", session, trace_id=tid)
+    records = _local_records(tid)
+    names = {r["name"] for r in records}
+    assert "voice:stt" in names
+    assert "voice:tts" in names
+    assert "turn" in names
+
