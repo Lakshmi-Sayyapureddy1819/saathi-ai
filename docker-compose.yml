@@ -1,0 +1,39 @@
+# Production-like stack for LOCAL testing: the same two images that run on AWS (backend + nginx/frontend).
+#   docker compose up --build        then open http://localhost:8080
+# Reads provider keys from your local .env (never copied into an image). With no key the app answers honestly that the
+# model is unavailable, or set ALLOW_MOCK_LLM=1 for flagged [MOCK] text. State lives in the named volume `saathi-data`.
+# UNTESTED LOCALLY: Docker was not installed on the author's machine. See AWS_DEPLOYMENT.md for what was actually verified.
+services:
+  backend:
+    build: { context: ., dockerfile: Dockerfile }
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      APP_ENV: production
+      ALLOW_SIMULATORS: "1"          # explicit: simulated lab partner + log-only alerts (see /api/readiness)
+      LAB_BACKEND: simulator
+      LAB_API_URL: ""
+      COORDINATOR_TOKEN: local-dev-coordinator-token   # throw-away value for local use only
+      FRONTEND_ORIGINS: http://localhost:8080
+      TELEGRAM_BOT_TOKEN: ""         # a local test must never page a real care-team channel
+      TELEGRAM_CHAT_ID: ""
+      DATABASE_URL: sqlite:////data/saathi.db
+    volumes:
+      - saathi-data:/data
+    stop_grace_period: 30s
+    restart: unless-stopped
+
+  web:
+    build: { context: ., dockerfile: Dockerfile.frontend }
+    environment:
+      ORIGIN_VERIFY: ""              # no CloudFront locally => the origin check is disabled
+      BACKEND_HOST: backend:8000
+    ports:
+      - "8080:80"
+    depends_on:
+      backend: { condition: service_healthy }
+    restart: unless-stopped
+
+volumes:
+  saathi-data:

@@ -164,15 +164,55 @@ def is_confirmation(text: str) -> bool:
     return (bool(_CONFIRM.search(text)) or bool(_CONFIRM_ONLY.match(text))) and not _NEGATE.search(text)
 
 
+_MONTHS = {"jan": 1, "january": 1, "feb": 2, "february": 2, "mar": 3, "march": 3, "apr": 4, "april": 4, "may": 5,
+           "jun": 6, "june": 6, "jul": 7, "july": 7, "aug": 8, "august": 8, "sep": 9, "sept": 9, "september": 9,
+           "oct": 10, "october": 10, "nov": 11, "november": 11, "dec": 12, "december": 12}
+_WEEKDAYS = {"monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3, "friday": 4, "saturday": 5, "sunday": 6}
+_MON = "|".join(sorted(_MONTHS, key=len, reverse=True))
+_DAY_MONTH = re.compile(rf"\b(\d{{1,2}})(?:st|nd|rd|th)?\s*(?:of\s+)?({_MON})\b", re.I)      # 25 november, 25th of nov
+_MONTH_DAY = re.compile(rf"\b({_MON})\s*(\d{{1,2}})(?:st|nd|rd|th)?\b", re.I)               # november 25, nov 25th
+_WEEKDAY = re.compile(r"\b(?:next\s+|on\s+|this\s+)?(" + "|".join(_WEEKDAYS) + r")\b", re.I)
+# Any date expression resolve_date understands (also used by the router to recognise a date mid-booking).
+DATE_WORD = re.compile(r"\b(today|aaj|tomorrow|kal|parso|day\s+after\s+tomorrow)\b|" + _DAY_MONTH.pattern + "|" +
+                       _MONTH_DAY.pattern + "|" + _WEEKDAY.pattern, re.I)
+
+
+def explicit_date(text: str, today: Optional[date] = None) -> Optional[date]:
+    """An explicit calendar date ('25 November', 'Nov 25th') or weekday ('Friday', 'next Monday') in `text`, else None.
+    A month-day that has already passed this year means next year. A weekday is its next occurrence after today."""
+    today = today or date.today()
+    m = _DAY_MONTH.search(text)
+    day, mon = (int(m.group(1)), _MONTHS[m.group(2).lower()]) if m else (None, None)
+    if not m:
+        m = _MONTH_DAY.search(text)
+        if m:
+            day, mon = int(m.group(2)), _MONTHS[m.group(1).lower()]
+    if m:
+        for year in (today.year, today.year + 1):
+            try:
+                d = date(year, mon, day)
+            except ValueError:
+                return None            # e.g. 31 November: do not guess
+            if d >= today:
+                return d
+        return None
+    w = _WEEKDAY.search(text)
+    if w:
+        ahead = (_WEEKDAYS[w.group(1).lower()] - today.weekday()) % 7 or 7
+        return today + timedelta(days=ahead)
+    return None
+
+
 def resolve_date(text: str, today: Optional[date] = None) -> date:
-    """Resolve 'today'/'tomorrow'/'kal'/'parso' relative to the real current date. Default: tomorrow."""
+    """Resolve 'today'/'tomorrow'/'kal'/'parso', an explicit date ('25 November') or a weekday, relative to the real current
+    date. Default when nothing is stated: tomorrow."""
     today = today or date.today()
     t = text.lower()
     if re.search(r"\b(today|aaj)\b", t):
         return today
     if re.search(r"\b(day after tomorrow|parso)\b", t):
         return today + timedelta(days=2)
-    return today + timedelta(days=1)
+    return explicit_date(text, today) or today + timedelta(days=1)
 
 
 def has_time(text: str) -> bool:

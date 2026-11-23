@@ -26,7 +26,7 @@ from app.observability.tracer import span, new_trace_id, flush, get_current_turn
 from app.safety.triage_gate import evaluate_safety_gate
 from app.tools.lab_tools import LabTools
 from app.tools.report_tools import report_tools
-from app.tools.slots import match_slot, is_confirmation, resolve_date, has_time
+from app.tools.slots import match_slot, is_confirmation, resolve_date, has_time, DATE_WORD, DATE_WORD
 from app.workflow.gateway import ADKModelGateway
 from app.workflow.model_client import ModelClient
 from app.workflow.replies import CLOSING, GREETING, THANKS, VOICE_CHECK, detect_lang, is_no_context_reply, say
@@ -65,7 +65,7 @@ _LIST_BOOKINGS = re.compile(
     r"\b(what|which)\s+(?:tests?\s+)?(have\s+i|did\s+i)\s+(already\s+)?booked\b", re.I)
 _CONFIRM_WORD = re.compile(r"\bconfirm(?:ed|ation)?\b|\bpakka\b", re.I)
 _BOOKING_STR = re.compile(r"^(?P<id>\S+) - (?P<pkg>.+) on (?P<date>\d{4}-\d{2}-\d{2}) (?P<slot>.+)$")
-_DATE_WORD =re.compile(r"\b(today|aaj|tomorrow|kal|parso|day\s+after\s+tomorrow)\b", re.I)
+_DATE_WORD = DATE_WORD  # today/tomorrow/kal/parso plus explicit dates and weekdays (app/tools/slots.py)
 
 
 def _brief(text: str, limit: int = 600) -> str:
@@ -248,6 +248,9 @@ class WorkflowGraph:
             return "node_lab_booking"
         if (_LIST_BOOKINGS.search(user_text) or _CONFIRM_WORD.search(user_text)) and not has_coach:
             return "node_lab_booking"  # code rule: 'my bookings' / 'confirm' never depend on the LLM fallback
+        if (is_confirmation(user_text) and not has_coach and session.active_node == "node_lab_booking"
+                and not in_booking and not awaiting_package):
+            return "node_lab_booking"  # bare "yes" right after a booking: say nothing is pending instead of "didn't catch that"
         if awaiting_package and (not (has_coach and not has_lab) or self.lab_tools.select_package(
                 user_text, [p for pid in session.booking_draft.candidate_package_ids if (p := self.lab_tools.get_package(pid))]).status != "none"):
             return "node_lab_booking"

@@ -118,6 +118,12 @@ async def _lifespan(_app: FastAPI):
             raise RuntimeError("Refusing to start in production: " + " ".join(r.problems))
     await asyncio.to_thread(check_credentials)
     yield
+    # Graceful shutdown (SIGTERM from `docker stop`): sessions are persisted after every turn, so only buffered trace spans
+    # remain. Flush them so a deploy or restart does not drop the last turns' telemetry.
+    try:
+        await asyncio.to_thread(flush)
+    except Exception:  # shutdown must never hang or raise
+        logging.exception("trace flush at shutdown failed")
 
 
 app = FastAPI(title="Saathi Care AI API", version="1.0", lifespan=_lifespan)

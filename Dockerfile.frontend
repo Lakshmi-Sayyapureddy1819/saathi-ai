@@ -1,0 +1,17 @@
+# Frontend image: Vite build -> nginx. nginx also reverse-proxies /api to the backend so the browser sees ONE origin
+# (no CORS, and CloudFront needs just one origin). VITE_API_URL is deliberately empty: the app then calls relative /api/...
+# No secret ever enters the frontend bundle: Vite embeds only VITE_* values, and there are none here.
+FROM public.ecr.aws/docker/library/node:22-alpine AS build
+WORKDIR /web
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY frontend/index.html frontend/tsconfig.json frontend/vite.config.ts ./
+COPY frontend/src ./src
+ENV VITE_API_URL=""
+RUN npx vite build
+
+FROM public.ecr.aws/docker/library/nginx:1.27-alpine
+RUN rm -f /etc/nginx/conf.d/default.conf
+COPY deploy/nginx.conf.template /etc/nginx/templates/default.conf.template
+COPY --from=build /web/dist /usr/share/nginx/html
+EXPOSE 80

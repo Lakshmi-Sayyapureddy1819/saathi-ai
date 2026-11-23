@@ -172,3 +172,18 @@ files for Gemini, OpenAI, Langfuse and Telegram key patterns found **no secrets*
 
 Suggested logical commits for the two remaining files: (1) `docs(evals): publish 2026-11-23 live run with change explanation`
 (`EVALS.md`, `evaluations/snapshots/eval_results_2026-11-23.json`); (2) `docs: reconcile submission readiness report`.
+
+## 15. Addendum: "yes" not responding (reported by the user, same day)
+- **Cause (reproduced):** `.env` sets `LAB_BACKEND=http`, `LAB_API_URL=http://127.0.0.1:8100`, but the partner service
+  (`python -m services.lab_partner`) was not running. Slot lookup silently fell back to local data, so the flow looked normal until
+  "yes": the booking call was refused, retried 3 times, and the chat handed off to a coordinator and paused. With the service up, the
+  same flow books correctly over HTTP (verified on a throwaway partner + app with a temp DB).
+- **Fixes:** `/api/readiness` now probes the partner and shows "PARTNER UNREACHABLE" plus a new `warnings` list (non-blocking, so
+  production startup is unchanged); a bare "yes" after a confirmed booking now says nothing is pending instead of "I didn't quite
+  catch that". Tests: `test_readiness_warns_when_the_http_lab_partner_is_unreachable`, `tests/test_bare_yes_after_booking.py`.
+  Full suite: **529 passed**.
+- **Still open:** with a dead partner the member still sees a handoff and a paused chat; that is the designed failure path, not a
+  bug. Slot lookup falling back to local availability while bookings go to the partner can offer slots the partner will refuse.
+- **Found in the dev server log:** Gemini returned **403** for `gemini-3.5-flash-lite`, so calls were served by the OpenAI fallback.
+  The Gemini key or its API access needs checking; this also means the fallback path is being exercised for real.
+- **Not committed.** The dev partner service on :8100 was started by hand and will not restart on its own.

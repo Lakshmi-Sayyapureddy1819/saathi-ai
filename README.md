@@ -214,6 +214,23 @@ Still simulated or missing (stated, not hidden): telephony (the Python voice age
 the browser voice demo uses real Web Speech), member login (sessions are bearer-token only), TLS termination (use a proxy),
 a third-party lab integration (the bundled scheduling service is real but self-hosted; map `HttpLabBackend` to a partner's API to use theirs).
 
+## Deploying to AWS (demo)
+
+A low-cost, single-region demo: one EC2 host (Docker: FastAPI + nginx/React, SQLite on an encrypted disk) behind CloudFront
+for HTTPS, with provider keys in Secrets Manager. Everything is one CloudFormation stack, so teardown is one command.
+Full guide, cost estimate, verification record and limits: **[AWS_DEPLOYMENT.md](AWS_DEPLOYMENT.md)**.
+
+```powershell
+aws login --profile saathi-aws --region ap-southeast-2         # once per 12 h session
+.\deploy\deploy.ps1 -Action Deploy                             # secret from your .env (values never printed) + stack + source upload
+.\deploy\deploy.ps1 -Action Status                             # stack state and the public https URL
+.\deploy\deploy.ps1 -Action Update                             # ship new code to the running host
+.\deploy\deploy.ps1 -Action Teardown -ConfirmTeardown          # delete everything the stack created
+```
+
+Honest limits: **one backend instance only** (ADK sessions live in process memory), SQLite (not multi-instance), simulated lab
+partner and log-only emergency alerts (explicit `ALLOW_SIMULATORS=1`), CloudFront-to-host hop is plain HTTP inside AWS.
+
 ## Judge calibration (kappa)
 
 Kappa only means something if the judge and the people scored the *same* responses, so generation and evaluation are

@@ -77,19 +77,40 @@ class Readiness(BaseModel):
     ready: bool
     components: List[ComponentStatus]
     problems: List[str] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)  # degraded but not start-blocking (e.g. partner API unreachable)
+
+
+_PARTNER_PROBE: dict = {"at": 0.0, "ok": True}
+
+
+def _partner_reachable() -> bool:
+    """Cheap GET <LAB_API_URL>/health (1.5 s timeout), cached 10 s so frequent readiness polling stays cheap."""
+    import time
+    if time.time() - _PARTNER_PROBE["at"] < 10:
+        return bool(_PARTNER_PROBE["ok"])
+    import requests
+    url = os.getenv("LAB_API_URL", "").rstrip("/")
+    try:
+        ok = bool(url) and requests.get(f"{url}/health", timeout=1.5).status_code < 500
+    except requests.RequestException:
+        ok = False
+    _PARTNER_PROBE.update(at=time.time(), ok=ok)
+    return ok
 
 
 def readiness() -> Readiness:
     from app.safety.alerts import configured_channel_names  # local import: alerts imports config
     s = get_settings()
     alerts = configured_channel_names()
+    partner_up = _partner_reachable() if s.lab_backend == "http" else True
     comps = [
         ComponentStatus(name="llm", mode="real" if llm_keys_configured() else "disabled",
                         detail="provider key present" if llm_keys_configured() else
                         ("mock replies enabled (ALLOW_MOCK_LLM)" if s.allow_mock_llm else "no key: honest 'unavailable' replies")),
         ComponentStatus(name="database", mode="real", detail=s.database_url.split("///")[0] + "///..."),
         ComponentStatus(name="lab_partner", mode="real" if s.lab_backend == "http" else "simulated",
-                        detail="HTTP adapter" if s.lab_backend == "http" else "in-process simulator"),
+                        detail=("HTTP adapter" if partner_up else "HTTP adapter: PARTNER UNREACHABLE (bookings will fail and hand off)")
+                        if s.lab_backend == "http" else "in-process simulator"),
         ComponentStatus(name="emergency_alerts", mode="real" if alerts else "simulated",
                         detail=", ".join(alerts) if alerts else "log only (no channel configured)"),
         ComponentStatus(name="telephony", mode="simulated",
@@ -114,4 +135,5 @@ def readiness() -> Readiness:
             problems.append("COORDINATOR_TOKEN is not set (care-team console would be disabled).")
         if not s.frontend_origins_set:
             problems.append("FRONTEND_ORIGINS is not set (CORS would only allow localhost).")
-    return Readiness(environment=s.app_env, ready=not problems, components=comps, problems=problems)
+    warnings = [] if partner_up else [f"Lab partner API at LAB_API_URL is unreachable: members' bookings will fail and hand off to a coordinator. Start it with: python -m services.lab_partner"]
+    return Readiness(environment=s.app_env, ready=not problems, components=comps, problems=problems, warnings=warnings)

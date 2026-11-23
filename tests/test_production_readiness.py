@@ -311,3 +311,17 @@ def test_the_gate_never_raises_even_if_the_alert_pipeline_explodes(monkeypatch):
     monkeypatch.setattr("app.safety.triage_gate.dispatch_emergency", boom)
     out = dispatch_emergency_sms("MEM_1", "CARDIAC_EMERGENCY; message <redacted len=5 tag=x>")
     assert out["status"] == "alert_queued"
+
+
+def test_readiness_warns_when_the_http_lab_partner_is_unreachable(monkeypatch):
+    """Regression: with LAB_BACKEND=http and nothing listening, 'yes' to a booking hands off. Readiness must say so."""
+    from app import config
+    monkeypatch.setenv("LAB_BACKEND", "http")
+    monkeypatch.setenv("LAB_API_URL", "http://127.0.0.1:9")  # discard port: nothing listens
+    monkeypatch.setitem(config._PARTNER_PROBE, "at", 0.0)  # bypass the 10 s cache
+    r = readiness()
+    lab = next(c for c in r.components if c.name == "lab_partner")
+    assert "UNREACHABLE" in lab.detail
+    assert r.warnings and "unreachable" in r.warnings[0].lower()
+    assert r.ready  # a warning must not block startup
+    monkeypatch.setitem(config._PARTNER_PROBE, "at", 0.0)  # do not leak the failed probe into other tests
