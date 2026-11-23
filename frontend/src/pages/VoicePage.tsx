@@ -6,8 +6,6 @@ import { goto } from "../app/routes";
 import { SessionGate } from "../components/SessionGate";
 import { BookingStepper, BookingSummary, flowPosition } from "../components/booking/BookingFlow";
 import { ChatMessage } from "../components/chat/ChatMessage";
-import { MimiAvatar } from "../components/mimi/MimiAvatar";
-import { mimiFromVoice } from "../components/mimi/mimiState";
 import { VoiceControls } from "../components/voice/VoiceControls";
 import { VoiceOrb } from "../components/voice/VoiceOrb";
 import { Button, StatusBadge } from "../components/ui";
@@ -36,14 +34,6 @@ function Inner() {
   const confirmed = lastBooking(session.messages);
   const pos = flowPosition(session.booking, confirmed !== null, session.handoff);
   const confirming = session.booking.stage === "confirming" && !paused;
-  // Mimi celebrates for a few seconds when a booking becomes confirmed during this voice session.
-  const [celebrate, setCelebrate] = useState(false);
-  const wasConfirmed = useRef(confirmed !== null);
-  useEffect(() => {
-    const now = confirmed !== null;
-    if (now && !wasConfirmed.current) { setCelebrate(true); const t = setTimeout(() => setCelebrate(false), 4000); wasConfirmed.current = now; return () => clearTimeout(t); }
-    wasConfirmed.current = now;
-  }, [confirmed]);
   const err = va.errorKind ? ERROR_COPY[va.errorKind] : null;
   const heard = va.interim;
   const active = va.phase === "on";
@@ -62,9 +52,7 @@ function Inner() {
         </div>
 
         <div className="vs-center">
-          <VoiceOrb state={va.state} level={va.level} levelAvailable={va.levelAvailable}>
-            <MimiAvatar size={200} state={mimiFromVoice(va.state, celebrate)} level={va.level} mouth={va.mouth} />
-          </VoiceOrb>
+          <VoiceOrb state={va.state} level={va.level} levelAvailable={va.levelAvailable} />
           <motion.div key={va.state} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18 }} className="vs-status">
             <StatusBadge tone={TONE[va.state]} icon={false} data-testid="voice-state-badge">{copy.label}</StatusBadge>
             <h2 data-testid="voice-state-label">{va.phase === "off" ? "Namaste! How can I help you today?" : copy.label}</h2>
