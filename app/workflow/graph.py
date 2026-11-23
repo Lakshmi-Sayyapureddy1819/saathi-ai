@@ -23,6 +23,7 @@ from app.grounding.citations import verify_citations
 from app.grounding.engine import GroundingEngine, GroundingPlanner, get_grounding
 from app.grounding.semantic_cache import EMBED_MODEL, wellness_cache
 from app.observability.tracer import span, new_trace_id, flush, get_current_turn_metrics
+from app.safety.injection_guard import GuardVerdict, check_injection
 from app.safety.triage_gate import evaluate_safety_gate
 from app.tools.lab_tools import LabTools
 from app.tools.report_tools import report_tools
@@ -188,7 +189,20 @@ class WorkflowGraph:
             return self._goto("node_emergency", user_text, session)
         if status == "YELLOW_WARNING":
             return session.yellow_reply or "", session
+        verdict = self._input_guard(user_text, session)
+        if verdict.blocked:
+            # triage pre-set the next node; a refusal ends the turn here and no LLM is called for it
+            session.next_node = None
+            return say(session.reply_lang, "injection_refusal"), session
         return self._goto("node_intent_router", user_text, session)
+
+    def _input_guard(self, user_text: str, session: UserSessionState) -> GuardVerdict:
+        """Jailbreak / prompt-injection check (deterministic). Logs the rule name only, never the user's words."""
+        with span("input_guard", self._tid(session), kind="guardrail", member_id=session.member.member_id,
+                  channel=session.channel, session_id=session.session_id, prompt_version=PROMPT_VERSION) as s:
+            verdict = check_injection(user_text)
+            s.set(blocked=verdict.blocked, rule=verdict.rule or "none")
+            return verdict
 
     def node_emergency(self, user_text: str, session: UserSessionState) -> Tuple[str, UserSessionState]:
         p = session.emergency_payload or EmergencyPayload()

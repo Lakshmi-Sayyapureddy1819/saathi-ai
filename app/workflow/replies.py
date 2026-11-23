@@ -82,6 +82,11 @@ MSG: dict[str, tuple[str, str]] = {
     "voice_clarify": (
         "Hello! 😊 I'm Saathi. I'm sorry, I didn't catch the rest of that. Are you looking to book a lab test, check available packages, or ask about wellness?",
         "Main sun rahi hoon! Mujhe theek se samajh nahi aaya. Kya aap lab test book karna chahte hain, ya koi wellness sawaal poochna chahte hain?"),
+    "injection_refusal": (
+        "I can't change how I work or share my internal instructions. I can help with wellness questions, lab tests, "
+        "or your bookings. What would you like to do?",
+        "Main apne andar ke nirdesh na badal sakti hoon aur na hi unhe bata sakti hoon. Main wellness sawaal, lab tests "
+        "ya aapki bookings mein madad kar sakti hoon. Aap kya karna chahenge?"),
     "handoff": (
         "I've asked a care coordinator to step in, and they will follow up with you shortly. Thank you for your patience.",
         "Humne ek care coordinator ko is mamle mein jod diya hai, woh jaldi hi aapse sampark karenge. Aapke intezaar ke "
