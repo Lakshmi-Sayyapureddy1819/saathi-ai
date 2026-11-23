@@ -226,14 +226,15 @@ test("voice: reduced motion disables orb animation", async ({ page }) => {
   expect(parseFloat(dur)).toBeLessThan(0.01);
 });
 
-test("voice orb: state follows the voice lifecycle; the voice assistant has no Mimi mascot", async ({ page }) => {
+test("voice orb: state follows the voice lifecycle; Mimi is shown inside the orb", async ({ page }) => {
   await page.addInitScript(installSpeechDoubles);
   await openVoice(page);
   const orb = page.getByTestId("voice-orb");
   await expect(orb).toHaveAttribute("data-state", "idle");
-  await expect(page.getByTestId("mimi")).toHaveCount(0); // Mimi is the chat persona only
+  await expect(page.getByTestId("voice-orb").getByTestId("mimi")).toBeVisible();
   await page.getByTestId("voice-start").click();
   await expect(orb).toHaveAttribute("data-state", "listening");
+  await expect(orb.getByTestId("mimi")).toHaveAttribute("data-state", "listening");
   await page.route("**/api/sessions/*/messages", async (route) => { await new Promise((r) => setTimeout(r, 1200)); await route.continue(); });
   await heard(page, "namaste", 0.95);
   await expect(orb).toHaveAttribute("data-state", "thinking");
