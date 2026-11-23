@@ -81,7 +81,12 @@ async def emergency(ctx: Context):
 
 @node
 async def intent_router(ctx: Context):
-    session, _ = await _step(ctx, "node_intent_router")
+    session, response = await _step(ctx, "node_intent_router")
+    # Small talk (greeting, thanks, closing, voice check) is answered right here and sets no next node. Routing it to
+    # the coach would overwrite that reply with the coach's answer, e.g. "I don't have that information" in Mode B.
+    if session.next_node is None and session.active_node == "node_intent_router":
+        yield Event(output=response)
+        return
     yield Event(route=session.next_node or "node_program_coach")  # fallback routing preserved
 
 

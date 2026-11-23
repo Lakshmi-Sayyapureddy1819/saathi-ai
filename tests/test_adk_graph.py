@@ -27,7 +27,7 @@ def test_adk_yellow_warning_is_deterministic():
 def test_adk_coach_route_and_fallback_routing():
     r = _run(AdkSaathi().turn("Tell me about Kapalbhati", _session("ADK_C")))
     assert r.session.active_node == "node_program_coach"
-    r = _run(AdkSaathi().turn("hello there", _session("ADK_F")))  # no keyword, no LLM key -> coach fallback
+    r = _run(AdkSaathi().turn("purple elephants dance", _session("ADK_F")))  # no keyword, not small talk -> coach fallback
     assert r.session.active_node == "node_program_coach"
 
 
@@ -71,3 +71,14 @@ def test_adk_handoff_rejection_continues_booking_flow():
     assert "different time" in r2.response
     assert r2.session.booking_draft.package_id and not r2.session.booking_draft.selected_slot
     assert r2.session.active_node == "node_lab_booking"
+
+
+def test_adk_greeting_is_not_overwritten_by_coach_in_either_mode():
+    """'hi' is answered by the router's small-talk reply in the ADK workflow, in both answer modes."""
+    from app.workflow.state import GroundingMode
+    from app.workflow.replies import say
+    for mode in ("mode_a_rag", "mode_b_facts"):
+        s = _session(f"ADK_G_{mode}")
+        s.grounding_mode = GroundingMode(mode=mode)
+        r = _run(AdkSaathi().turn("hi", s))
+        assert r.response == say(r.session.reply_lang, "greeting"), (mode, r.response)
