@@ -181,3 +181,82 @@ _Implemented in the prototype: member message text is redacted from logs, stdout
 | 1 | Slang or code-mixed distress that the red-flag regexes miss (a false negative is the worst failure) | Daily false-negative audit queue; a second-stage classifier that can only raise the triage level (not built) | Weekly recall on a growing labelled red-flag set (target 100%); alert on any human-reviewed miss; rate of sessions the audit queue flags |
 | 2 | Partner lab API 500 spike | Retries with backoff, then handoff to a care coordinator (built); circuit-breaker to stop hammering a dead API (not built) | Alert on `tool:book_test` error rate and handoff-ticket rate (the incident drill shows both: `docs/INCIDENT_DRILL.md`); coordinator queue age |
 | 3 | Voice time-to-first-audio drift and wrong readings of numbers/dates | Read-back of test, date and slot plus an explicit yes (built); streaming into TTS and local TTS fallback (not built) | p95 TTFA per turn type against the 1.5 s budget; read-back correction rate (caller says "no" after a read-back); wrong-booking rate (target 0) |
+
+## 6. As-built implementation (read from source, 2026-11-23)
+
+Sections 1-5 are the architect memo (scale, cost, DPDP, risks). This section describes what the repository actually runs.
+Where it differs from the memo's design intent, the difference is stated.
+
+### 6.1 Workflow graph and ADK 2.11.0
+`app/workflow/adk_graph.py` builds a real Google ADK 2.11.0 `Workflow` of `@node` functions. Every node calls the single set of
+business-logic steps in `app/workflow/graph.py` (`WorkflowGraph.run_node`), so there is no duplicated logic between the ADK path
+and the plain-Python path used by tests and evals.
+
+```
+START -> safety_gate -> emergency
+                     -> intent_router -> program_coach
+                                      -> lab_booking -> handoff_request -> (pause: RequestInput) -> handoff_resolution
+```
+Code decides: red-flag escalation, the diagnosis/medication refusal, slot parsing and read-back, the "explicit yes", every tool
+call and its arguments, retries, and the handoff trigger. The LLM only words wellness answers, classifies an intent when no rule
+decides, and acts as a second safety stage that can only **raise** the triage level. Human approval of a failed booking uses ADK
+`RequestInput`: the workflow genuinely pauses and resumes. Logs show an ADK warning ("Node 'lab_booking' has conditional/DEFAULT
+edges but none were matched ... The branch will end"); it did not fail any test and has not been root-caused.
+
+### 6.2 Model gateway and remaining bypasses
+`ADKModelGateway(BaseLlm)` in `app/workflow/gateway.py` is the only place a `ModelClient` is constructed or called (source search
+of `app/`, 2026-11-23). The coach, router fallback, grounding planner, safety second stage and report explainer all use it.
+- **Gemini generation:** executed by ADK's native `google.adk.models.google_llm.Gemini` inside `ModelClient`.
+- **OpenAI, Ollama, vLLM generation:** the project's own `requests` calls in `model_client.py`. This is not ADK networking.
+- **Bypass, stated plainly:** the semantic-cache **embedding** request (`app/grounding/semantic_cache.py`) is a direct
+  `requests.post` to the Gemini embeddings API. It is not generation and gets no gateway retry or fallback; a failure degrades the
+  cache to token-overlap matching. `tests/test_centralized_adk_gateway.py::test_provider_http_egress_is_confined_to_known_files`
+  fails if any other file starts talking to a provider.
+- Resilience: at most 3 retries with exponential backoff and proportional jitter, per-call timeout, vendor fallback by routing
+  node (`config/models.yaml`), circuit breaker. Emergency detection never depends on the gateway.
+
+### 6.3 Session state and persistence
+Typed Pydantic V2 state (`app/workflow/state.py`) is held per session. The API stores sessions, members, confirmed bookings and an
+emergency-alert audit trail in SQLite through one `Store` interface (`app/persistence/store.py`; Postgres would be an
+implementation swap). Session tokens are stored only as SHA-256 hashes; sessions expire after `SESSION_TTL_MINUTES` idle (default
+120) and are capped (`MAX_SESSIONS`, default 200); creation and message rates are limited. A different member's token gets 401.
+Message text is stored as typed (it is the conversation), so the database volume must be encrypted and retention applied (section 4).
+
+### 6.4 RAG and non-RAG modes
+`GROUNDING_MODE=mode_a_rag|mode_b_facts`, switchable per session from the UI.
+Mode A: an agent loop plans a retrieval query from a fixed whitelist, searches a pluggable retriever (lexical by default,
+`RETRIEVER=embedding` available), may re-search, and must cite `[DOC_id]`; citations are verified against retrieved documents.
+Mode B: no retrieval; backend tools return the member's profile, bookings, schedule and the lab catalogue, and the model may answer
+only from those facts or say it does not know. Measured trade-offs are in `EVALS.md`.
+
+### 6.5 Booking flow and idempotency
+Generic request -> candidate packages -> member picks one -> slot (fasting tests only offer morning slots) -> read-back -> explicit
+yes -> `book_test`. `book_test` retries up to 3 times with exponential backoff and sends a **stable idempotency key**
+(`member:package:date:slot`) on every attempt, so a retry after a timeout cannot create a second partner booking. A taken slot is
+refused locally and by the partner (409). After retries are exhausted the workflow raises a human-handoff ticket. A repeated "yes"
+after booking answers "nothing pending" (verified by API test and browser test). The partner API is a **simulator** by default;
+`LAB_FAILURE_RATE` (default 0, the brief's 15% needs `0.15`) injects failures; `LAB_BACKEND=http` selects an HTTP adapter that has
+not been run against a real partner.
+
+### 6.6 Voice
+Chat and voice share one workflow (`app/channels/voice_agent.py` drives `execute_turn`). In the browser, speech-to-text and
+text-to-speech are the browser's Web Speech engines; the UI shows a real microphone level, live transcript, mute, interrupt
+(barge-in cancels speech without losing state), low-confidence guard and booking read-back. The backend `VoiceAgent` used by evals
+and `voice_demo.py` **simulates** STT/TTS, so its latency numbers exclude real audio. No telephony provider is integrated; the
+outbound reminder call is a simulation. The voice assistant is a separate screen from Mimi, who is only the chat persona.
+
+### 6.7 Observability
+`app/observability/tracer.py` writes one span per node, tool and model call to `logs/traces.jsonl`, all sharing the turn's
+`trace_id`, with model, tokens, cost and latency on LLM spans. With `LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY` set, spans are also
+exported to Langfuse 4.x (LLM spans as generations). Content is redacted by default (`LANGFUSE_CAPTURE_CONTENT=false`). Export
+failures are counted and never break a turn. Export to a live Langfuse project was not inspected in this verification pass.
+
+### 6.8 Semantic cache
+Embedding cosine similarity, threshold 0.88, TTL 3600 s, namespaced by prompt version and embedding model, optional Redis backend
+(stores only the embedding and a generic answer, never question text). Only generic Mode A answers are cached; member-data,
+booking and PII-like queries bypass it, so no member-specific answer is shared across members.
+
+### 6.9 Scale and privacy
+The 15M interactions/month plan, routing and cost projection are sections 2-3; DPDP consent, retention and erasure are section 4.
+They are design and cost modelling; **no load test was run**. The prototype's in-process rate limits and SQLite are not
+multi-instance safe, which is why section 2 moves session state to Redis/Postgres.

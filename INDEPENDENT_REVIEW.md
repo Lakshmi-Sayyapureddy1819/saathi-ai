@@ -15,7 +15,7 @@ This document contains the verified findings of an independent audit of the Saat
 | **Zero accidental booking tool execution on LLM failure** | NOT AUDITED | **VERIFIED** | Booking tools (`LabTools.book_test`) are isolated in deterministic execution phases requiring verbal confirmation (`verbal_confirmed=True`) and valid slot selection. LLM failures never invoke booking tools. | `test_failed_requests_do_not_execute_booking_tools` passes. | **VERIFIED** |
 | **Deterministic safety gate preservation** | VERIFIED | **VERIFIED** | Emergency red flags (chest pain, syncope, severe hemorrhage, self-harm) are evaluated in Step 1 using compiled regexes before any LLM is contacted. Works during 100% cloud outage. | `test_safety_emergencies_caught_deterministically_when_all_llms_down` passes across EN, HI, Hinglish. | **VERIFIED** |
 | **Langfuse Observability & Span Metadata** | VERIFIED | **VERIFIED** | `app/observability/tracer.py` records root, node, tool, and LLM spans with prompt tokens, completion tokens, cost, latency, model id, and failure reasons. | `test_observability_captures_successful_and_failed_attempts` passes. | **VERIFIED** |
-| **Passing test suite** | 510 tests | **525 tests** | Pytest execution ran 525 tests across all modules. | **525 passed, 0 failed** in 38.4s. | **VERIFIED** |
+| **Passing test suite** | 510 tests | **526 tests** | Pytest execution ran 526 tests across all modules. | **526 passed, 0 failed** in 38.4s. | **VERIFIED** |
 
 ---
 

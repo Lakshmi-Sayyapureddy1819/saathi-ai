@@ -4,7 +4,7 @@ Verifies:
 1. Program Coach uses ADKModelGateway.
 2. Intent routing uses ADKModelGateway.
 3. LLM-based triage operations use ADKModelGateway.
-4. No application-level direct model HTTP calls to Gemini remain (uses native ADK Gemini).
+4. Provider HTTP is confined to known files (custom `requests` code, not native ADK networking).
 5. Retry attempts are bounded and backoff increases correctly with jitter.
 6. Multi-provider fallback executes properly when primary provider fails.
 7. Failed model requests never execute booking tools.
@@ -124,29 +124,35 @@ def test_llm_based_triage_uses_adk_gateway():
     assert status == "YELLOW_WARNING"
 
 
-def test_no_application_direct_gemini_http_calls(monkeypatch):
-    """Verify Gemini calls go through native ADK BaseLlm, not requests.post to generativelanguage."""
-    disallowed_urls = []
+def test_provider_http_egress_is_confined_to_known_files():
+    """Source-level egress check. Generation HTTP lives ONLY in model_client.py (behind ADKModelGateway).
 
-    orig_post = requests.post
+    This is NOT native ADK networking: model_client.py makes its own `requests` calls. The one other provider call is
+    the semantic-cache embedding request, which is not generation and does not use the gateway's retry/fallback.
+    If a new file talks to a provider, this test fails so the bypass is a conscious decision, not an accident.
+    """
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parent.parent / "app"
+    hosts = ("generativelanguage.googleapis.com", "api.openai.com", "/chat/completions", "/api/generate")
+    allowed = {"workflow/model_client.py", "grounding/semantic_cache.py"}
+    offenders = sorted(
+        str(f.relative_to(root)).replace("\\", "/")
+        for f in root.rglob("*.py")
+        if any(h in f.read_text(encoding="utf-8") for h in hosts)
+        and str(f.relative_to(root)).replace("\\", "/") not in allowed
+    )
+    assert offenders == []
 
-    def guarded_post(url, *args, **kwargs):
-        if "generativelanguage.googleapis.com" in str(url):
-            disallowed_urls.append(url)
-            raise AssertionError(f"Direct raw HTTP call to Gemini detected: {url}")
-        return orig_post(url, *args, **kwargs)
 
-    monkeypatch.setattr(requests, "post", guarded_post)
-
-    client = ModelClient()
+def test_gateway_mock_mode_makes_no_network_call(monkeypatch):
+    """With no keys and ALLOW_MOCK_LLM=1 the gateway returns a flagged mock and never calls requests.post."""
+    calls = []
+    monkeypatch.setattr(requests, "post", lambda *a, **k: calls.append(a) or (_ for _ in ()).throw(AssertionError("network")))
     monkeypatch.setenv("ALLOW_MOCK_LLM", "1")
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-
-    gw = ADKModelGateway(client=client)
-    res = gw.generate("Test prompt")
-    assert res.mock is True
-    assert len(disallowed_urls) == 0
+    res = ADKModelGateway(client=ModelClient()).generate("Test prompt")
+    assert res.mock is True and calls == []
 
 
 def test_retry_attempts_are_bounded_and_backoff_increases(monkeypatch):

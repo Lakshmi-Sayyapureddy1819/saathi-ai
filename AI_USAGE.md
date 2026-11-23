@@ -184,3 +184,32 @@ The measurement is a snapshot: anything after the timestamp above is not include
 
 Gemini CLI $17.89 (this section) + Claude Code about $52.18 (section 5, measured 2026-11-22 13:16 UTC) = about **$70.07** API-equivalent. Neither is a bill; Claude Code kept running after its snapshot. The application's own runtime LLM spend (evals, model-mix run) is separate: see `EVALS.md` and `evaluations/snapshots/model_mix_*.json`.
 
+
+## 3d. Verification pass of 2026-11-23: what was corrected, and who did what
+
+This section covers a Claude Code (Claude Sonnet 5.5) verification session. Token usage for it was **not measured** (section 5's
+snapshot predates it); the LLM spend of the application itself is in `SUBMISSION_READINESS_REPORT.md`.
+
+**What the AI did:** started the app, ran every test layer, drove the real workflow through the API against a sandbox backend,
+fixed three defects, and wrote the reports. **What a human decided:** the scope, and to continue after an initial audit.
+
+**AI output corrected during the session**
+- A test named `test_no_application_direct_gemini_http_calls` (written by another AI session) claimed to prove Gemini goes through
+  native ADK. It ran in mock mode with no API key, so it could never reach Gemini and passed vacuously. The verifying session
+  replaced it with a source-level egress test that checks what is actually true, and it states that OpenAI/Ollama/vLLM calls and
+  the embedding call are not native ADK.
+- The verifying session's own first report said all providers used custom `requests` calls. Re-reading the source after another
+  session's change showed Gemini now uses ADK's native `Gemini` class; the report and `ARCHITECTURE.md` were corrected.
+- A genuine safety bug surfaced only because a test failed: the gateway raised on any call without a trace id and the safety gate
+  swallowed it, silently disabling its LLM second stage (fixed, with a regression test).
+- Another session's tests exposed a real gap (self-harm phrasings such as "killing myself") and a retry-jitter bug; those were
+  fixed in that session's commit.
+
+**Concurrent sessions.** While the verification ran, a second AI session edited `gateway.py`, `triage_gate.py`, `model_client.py`
+and added a test file, and made a commit. The test count and failures changed between runs because of it. The verifying session
+did not revert that work and reports the final, unexcluded suite result.
+
+**Independently verified vs AI-generated.** Test counts and eval numbers in the reports come from commands run in the session.
+The human calibration labels remain from one person (section 3c). The faithfulness judge is an LLM from the same vendor as the
+answerer and has not been validated by an independent human beyond the 15 calibration items. Nothing in the reports about live
+Langfuse, Telegram, a real lab partner or real speech was verified by a human or by the AI in this pass.

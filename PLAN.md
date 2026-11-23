@@ -95,3 +95,34 @@ Measured, not guessed: see `ARCHITECTURE.md` section 3 (cost per turn per mode f
 
 ### Citations (verified by code, shown in the UI)
 The coach is asked to cite `[PROG_..]` (Mode A) or `[bookings]`, `[lab_catalogue]`, ... (Mode B), but the model is not trusted: `app/grounding/citations.py` checks every cited id against the context the model was actually given. Unknown ids are stripped and recorded (`fabricated_citations` on the trace); an answer that cites nothing still shows its sources as "consulted". The API returns typed `citations` + a `grounding` summary on each coach message; the chat shows source chips and a "How I answered" panel (mode, searches or lookups, who decided); voice never speaks the markers. Eval columns: answers citing a verified source, fabricated citations.
+
+## 11. Implementation status (2026-11-23) and trade-offs
+
+Status labels: VERIFIED = executed in the 2026-11-23 verification pass (evidence in `SUBMISSION_READINESS_REPORT.md`);
+NOT LIVE-VERIFIED = implemented, tested only with doubles or simulators.
+
+| Requirement | Status |
+|---|---|
+| ADK 2.11.0 `Workflow` with `@node`s, handoff via `RequestInput` | VERIFIED |
+| Single model gateway (`ADKModelGateway`); native ADK `Gemini` for Gemini; OpenAI/Ollama/vLLM via `requests` | VERIFIED by source search. Embedding calls bypass the gateway |
+| Program Coach, Lab Booking with `search_packages` / `check_slots` / `book_test`, explicit confirmation, idempotency key | VERIFIED (API + browser) |
+| Simulated 15% booking failure | Mechanism VERIFIED; **default is 0**, set `LAB_FAILURE_RATE=0.15` |
+| Human handoff with coordinator approve/reject | VERIFIED in browser against a stack where every lab call fails |
+| Shared chat/voice workflow; member-scoped sessions | VERIFIED (other member's token -> 401) |
+| Mode A (RAG, citations) and Mode B (facts + tools) | VERIFIED, measured in `EVALS.md` |
+| Versioned prompts, injection resistance | VERIFIED by tests and the prompt-iteration snapshot of 2026-11-22 |
+| Semantic cache without member leakage | VERIFIED by tests; Redis path with fakeredis only |
+| Langfuse | Local spans VERIFIED; Langfuse cloud export NOT LIVE-VERIFIED |
+| Voice: browser STT/TTS, barge-in, read-back, explicit confirm | VERIFIED with a fake microphone and speech doubles; real speech/telephony NOT LIVE-VERIFIED |
+| 15M interactions/month architecture | Design and cost model only; no load test |
+
+### Trade-offs taken
+- **Code over LLM for anything irreversible or safety-critical.** Costs flexibility (a new phrasing needs a rule) and recall is
+  only as good as the regex list; the LLM second stage can raise but never lower triage.
+- **Simulated partner API and SQLite.** Keeps the prototype self-contained and testable; not multi-instance safe, and the HTTP
+  adapter has never met a real partner.
+- **Lexical retrieval by default.** Cheap and deterministic with a small library; weaker on paraphrase than embeddings.
+- **flash-lite as default model.** Lowest p95 among mixes that passed the gates; quality could not be ranked at n=12.
+- **Voice latency budget met by a spoken filler**, not streaming: the full answer still takes about 2 s.
+- **Known gaps:** lexical groundedness proxy below its 80% target in the latest run; single human annotator for judge calibration;
+  no demo video.
