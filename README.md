@@ -4,11 +4,14 @@ Wellness-coach + lab-booking assistant with a deterministic safety gate, tool-ba
 handoff, tracing on every step, redacted logging and a measured evaluation harness. This repository is a prototype of
 the architecture described in `ARCHITECTURE.md` (which also lists what is *not* implemented).
 
-**Actual LLM Spend:** about **USD 2.65** of runtime LLM calls (coach, router, judge) summed from the per-call `cost_usd`
-in `logs/*.jsonl` on 2026-11-22 (eval 1.39, chat/API 1.12, incident drill 0.14, smoke 0.003). That is roughly INR 230 at
-INR 87/USD, and under INR 500 even at INR 100/USD (INR 265). Limits: the logs are git-ignored and only cover calls that were
-traced; the INR rate is my assumption (no rate was recorded); build-tool spend (Claude Code, Gemini CLI) is separate, in
-`AI_USAGE.md` section 6.
+**Actual LLM Spend:** about **USD 3.80** of runtime LLM calls (coach, router, judge) summed from the per-call `cost_usd`
+in `logs/*.jsonl` on 2026-11-23 (evals 2.35, chat/API 1.16, incident drill 0.28, smoke 0.003; 5,892 non-mock calls). That is
+roughly **INR 352** at INR 92.75/USD (the live rate on 2026-11-23), INR 330 at 87 and INR 380 at 100, so **under INR 500 at
+every rate checked**. This replaces the earlier figure of USD 2.65 (2026-11-22), which predates two more full live evaluation
+runs. Limits: the logs are git-ignored and only cover calls traced on the development machine (the few chat turns on the AWS
+demo host are not included); costs come from the app's own pricing table, not a provider invoice; build-tool spend (Claude Code,
+Gemini CLI) is separate, in `AI_USAGE.md` section 6; AWS hosting is separate and paid from free-plan credits
+(see `AWS_DEPLOYMENT.md`).
 
 ## Setup
 

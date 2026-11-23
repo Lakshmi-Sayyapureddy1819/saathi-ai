@@ -29,7 +29,7 @@
 - **Observability:** Langfuse tracing captures root, node, tool, and LLM spans with prompt tokens, candidate tokens, cost in USD, and latency.
 
 ## 4. Test Verification
-- **Automated Test Suite:** **526 passed, 0 failed** (`pytest tests/`).
+- **Automated Test Suite:** **554 passed, 0 failed** (`pytest tests/`).
 - **Dedicated Gateway Tests:** `tests/test_centralized_adk_gateway.py` (10 tests) rigorously validates gateway routing across all nodes, retry scaling, fallback, booking isolation, and emergency recall.
 
 ## 5. Architectural Limitations

@@ -44,7 +44,7 @@ How to read this:
 | Cache threshold sweep | `python evaluations/evaluate_cache.py` | embedding calls |
 | Incident drill | `python -m evaluations.incident_drill` | real LLM spend |
 
-Unit-test results are not evaluation results: 526 passing tests say the code behaves as specified, not that answers are good.
+Unit-test results are not evaluation results: 554 passing tests say the code behaves as specified, not that answers are good.
 
 ## Metrics
 
