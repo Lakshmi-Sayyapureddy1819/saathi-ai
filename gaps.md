@@ -19,7 +19,7 @@ the shell PATH here), so "done" below means "present in the repo/docs", not "re-
 | 8 | Semantic cache | Should | Done | Sits in front of Coach (Mode A only); default threshold 0.88 configured & validated; 0.00% false-hit rate measured across 34 labelled pairs with threshold sweep analysis (`evaluations/evaluate_cache.py`); member-data and booking queries strictly bypassed. |
 | 9 | Architect memo | Must | Done | Section 3 replaced with a measured-cost projection (model mix, 15M/month scenarios, latency budgets); DPDP log/mask/consent/retention and top-3 risks with monitoring made explicit. STT/TTS cost still an unpriced input. |
 | - | Stretch: UI | Stretch | Done | React UI + 18 screenshots + Playwright. |
-| - | Stretch: report explainer | Stretch | Not done | Optional, skip. |
+| - | Stretch: report explainer | Stretch | Done | Synthetic CMP lab report parsed and explained via ReportTools/ADKModelGateway, with seamless automatic handoff prompt to node_lab_booking. |
 
 ## Deliverables checklist
 
