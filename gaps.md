@@ -25,7 +25,7 @@ the shell PATH here), so "done" below means "present in the repo/docs", not "re-
 
 - [x] README, EVALS.md, ARCHITECTURE.md, AI_USAGE.md, `.claude/skills/`, CLAUDE.md
 - [x] **PLAN.md as the first commit**: verified, root commit `6adfa01` contains only `PLAN.md` (`git rev-list --max-parents=0 HEAD`). An earlier version of this file and PLAN.md wrongly said it was not.
-- [ ] **5-8 min video**: chat demo, voice demo, trace walkthrough, Mode A vs B, routing decision. Not recorded.
+- [ ] **5-8 min video**: chat demo, voice demo, trace walkthrough, Mode A vs B, routing decision. **Pending: the owner records and uploads it** (shot list and disclosures in `DEMO_SCRIPT.md`; no video link exists yet).
 - [x] **Actual LLM spend in README** (<= INR 500): added, about USD 2.65 summed from `logs/*.jsonl` (INR rate is an assumption).
 - [ ] Public GitHub repo / deployed link: confirm it is pushed and public.
 - [ ] Rotate the Gemini key that was once exposed (still needed).
