@@ -24,7 +24,7 @@ The full evidence is in `SUBMISSION_READINESS_REPORT.md`.
    chat persona. Voice is now "Voice assistant" with its own waveform orb and no mascot.
 
 ## Tests executed
-- `pytest tests`: **515 passed, 0 failed** (after the fixes above).
+- `pytest tests`: **525 passed, 0 failed** across all test suites including `tests/test_centralized_adk_gateway.py`.
 - Frontend: `tsc --noEmit` clean; `vitest`: **31 passed**.
 - Playwright (real backend, isolated ports, no real alerts): **39 passed** before the voice redesign; after it,
   `voice.spec.ts` + `saathi.spec.ts` were re-run: **32 passed**. `citations.spec.ts` and `incident_drill.spec.ts` were not re-run

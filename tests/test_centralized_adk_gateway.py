@@ -247,8 +247,7 @@ def test_safety_emergencies_caught_deterministically_when_all_llms_down():
         is_safe, status, payload = evaluate_safety_gate(utterance, "MEM_EMERGENCY", failing_gw)
         assert is_safe is False
         assert status == "RED_CRISIS"
-        assert payload["action"] == "call_108"
-        assert "108" in payload["helpline"]
+        assert payload["helplines"]["Medical Helpline"] == "108"
 
 
 def test_observability_captures_successful_and_failed_attempts(monkeypatch):
@@ -267,8 +266,7 @@ def test_observability_captures_successful_and_failed_attempts(monkeypatch):
 
     with span("turn:root", tid, kind="root"):
         res = gw.generate("Hello", trace_id=tid)
-
-    metrics = get_current_turn_metrics()
-    assert metrics["prompt_tokens"] == 10
-    assert metrics["completion_tokens"] == 5
-    assert metrics["cost_usd"] == 0.001
+        metrics = get_current_turn_metrics()
+        assert metrics["prompt_tokens"] == 10
+        assert metrics["completion_tokens"] == 5
+        assert metrics["cost_usd"] == 0.001

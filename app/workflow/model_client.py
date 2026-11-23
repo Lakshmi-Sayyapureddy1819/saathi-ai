@@ -271,7 +271,8 @@ class ModelClient:
             except Exception as e:  # noqa: BLE001
                 if not _is_transient(e) or attempt == max_retries:
                     raise
-                delay = (base_delay * (2 ** attempt) + random.uniform(0.01, 0.1 * (2 ** attempt))) if base_delay > 0 else 0.0
+                # Exponential backoff with proportional jitter so delays scale monotonically
+                delay = (base_delay * (2 ** attempt)) * (1.0 + random.uniform(0.01, 0.15)) if base_delay > 0 else 0.0
                 self.last_retry_delays.append(delay)
                 logging.warning("Model %s transient failure (%s); retrying in %.2fs (attempt %d/%d).", 
                                 model_id, _reason(e), delay, attempt + 1, max_retries)

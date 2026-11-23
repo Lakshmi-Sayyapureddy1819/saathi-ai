@@ -55,7 +55,7 @@ COMPILED_RED_FLAGS = {
     ),
     # Acute Self-Harm / Suicidal Ideation
     "SELF_HARM_EMERGENCY": re.compile(
-        r"\b(suicid(?:e|al)?|sucide|suiside|kill(?:ing)?\s*my\s*self|end\s*my\s*life|end\s*it\s*all|want\s*to\s*die|"
+        r"\b(suicid(?:e|al)?|sucide|suiside|kill(?:ing)?\s*(?:my\s*self|myself)|end(?:ing)?\s*(?:my\s*life|it\s*all)|want(?:ing)?\s*to\s*die|"
         r"(?:don'?t|dont|do\s*not)\s*want\s*to\s*(?:live|be\s*alive)|no\s*reason\s*to\s*live|"
         r"marna\s*chaht[ai]|mar\s*jan[ae]\s*chaht[ai]|jeena\s*nahi\s*chaht[ai]|jeene\s*ka\s*mann\s*nahi|"
         r"zindagi\s*khatam|aatmahatya|khudkushi|jaan\s*dena|harm\s*myself|nuksan\s*pahuncha|marne\s*ka\s*mann|nuksan\s*karna)\b",

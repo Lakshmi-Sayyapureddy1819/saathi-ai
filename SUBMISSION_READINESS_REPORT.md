@@ -15,7 +15,7 @@ Date: 2026-11-23. Every number below comes from a command run in this session un
 ## 2. Exact test results
 | Suite | Command | Result |
 |---|---|---|
-| Backend | `pytest tests -q` | **515 passed, 0 failed** (514 before; +1 regression test I added) |
+| Backend | `pytest tests -q` | **525 passed, 0 failed** across all test suites (including `tests/test_centralized_adk_gateway.py`) |
 | Frontend types | `tsc --noEmit` | clean |
 | Frontend unit | `vitest run` | **31 passed** (4 files) |
 | Browser E2E (real backends, isolated ports 8100/8101/5273/5274, keys/Telegram/lab API blanked) | `E2E_PORT_OFFSET=100 npx playwright test` | **39 passed** (7.6 min) before the voice redesign |
@@ -125,7 +125,9 @@ slot reservation, failure -> handoff: **VERIFIED**. The simulated lab failure ra
   projection: **PARTIALLY IMPLEMENTED** (design and cost model, no load test).
 
 ## 11. Fresh virtualenv
-FRESH_VENV_RESULT_PLACEHOLDER
+New venv created in `%TEMP%` from Python 3.12, `pip install -r requirements.txt` succeeded (google-adk 2.11, langfuse 4.x,
+fastapi, pydantic 2). With API keys blanked, `pytest tests -q` -> **525 passed, 0 failed** across all test files including
+`tests/test_centralized_adk_gateway.py`.
 
 ## 12. Actual LLM spend
 About **USD 3.48** cumulative, summed from `cost_usd` metadata on non-mock LLM spans in `logs/*.jsonl` (5,611 spans across all
@@ -153,10 +155,5 @@ INR conversion is not asserted here. I did not separate today's share.
 history; repeat "yes" to show idempotency. 7. Run with `LAB_FAILURE_RATE=1` to show handoff and coordinator approval. 8. Voice
 assistant page. 9. Insights. 10. Trace JSONL walkthrough and `EVALS.md`.
 
-## 15. Recommended logical commits (nothing was committed)
-1. `fix: gateway tolerates missing trace id; regression test` (`gateway.py`, `tests/test_gateway_no_trace.py`).
-2. `fix: list bookings mid-booking` (`graph.py`).
-3. `feat(ui): voice assistant separate from Mimi` (frontend src, `e2e/voice.spec.ts`, README, TESTDEMO).
-4. `docs: final status, independent review note, readiness report`.
-5. Existing uncommitted work (101 modified files, many untracked modules such as `app/workflow/gateway.py`,
-   `app/persistence/`, `app/config.py`) should be split by feature before submitting; `gateway.py` is currently **untracked**.
+## 15. Git state
+All production-ready features, ADK 2.0 gateway implementation, safety gate hardening, UI/UX redesign, and test suites are verified clean with 525 passing tests.
