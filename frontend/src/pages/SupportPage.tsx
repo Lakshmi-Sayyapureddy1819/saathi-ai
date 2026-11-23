@@ -34,7 +34,7 @@ export function SupportPage() {
         <Card>
           <div className="card-title"><MessageCircle size={18} aria-hidden="true" />Need something else?</div>
           <p className="muted">Ask Saathi in chat or by voice. If it can't help, it will tell you.</p>
-          <div className="row-gap" style={{ marginTop: 12 }}><Button variant="primary" onClick={() => goto("chat")}>Open chat</Button><Button onClick={() => goto("voice")}>Voice assistant</Button></div>
+          <div className="row-gap" style={{ marginTop: 12 }}><Button variant="primary" onClick={() => goto("chat")}>Open chat</Button><Button onClick={() => goto("voice")}>Talk to Mimi</Button></div>
         </Card>
       </div>
 

@@ -41,7 +41,7 @@ export function AppShell({ route, children }: { route: RouteId; children: ReactN
           return (
             <a key={n.id} href={n.path} className={route === n.id ? "active" : ""} aria-current={route === n.id ? "page" : undefined}>
               {route === n.id && <motion.i layoutId="bn-indicator" className="bn-ind" transition={{ type: "spring", stiffness: 420, damping: 34 }} aria-hidden="true" />}
-              <I size={21} aria-hidden="true" className="bn-ic" /><span>{n.label.replace("Voice assistant", "Voice").replace("Chat with Mimi", "Chat").replace("My Bookings", "Bookings").replace("Lab Tests", "Labs")}</span>
+              <I size={21} aria-hidden="true" className="bn-ic" /><span>{n.label.replace("Talk to Mimi", "Talk").replace("Chat with Mimi", "Chat").replace("My Bookings", "Bookings").replace("Lab Tests", "Labs")}</span>
             </a>
           );
         })}

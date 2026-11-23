@@ -1,4 +1,4 @@
-/* ---- Voice assistant ---- */
+/* ---- Talk to Mimi ---- */
 .voice-layout { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.85fr); gap: var(--sp-5); height: calc(100dvh - var(--topbar-h) - var(--sp-8)); min-height: 560px; }
 .voice-side { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-3); align-content: start; overflow-y: auto; padding-right: 2px; min-height: 0; }
 .voice-stage {

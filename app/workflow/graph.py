@@ -315,8 +315,12 @@ class WorkflowGraph:
         if ctx.skipped:
             few = len(user_text.split()) <= 3  # fragments get a warm nudge; a full question gets the honest answer
             return say(session.reply_lang, "voice_clarify" if few else "coach_empty"), session
+        words = user_text.strip().split()
+        # Mode B always returns the profile and bookings, so it is never "empty": a short fragment that does not ask
+        # about the member's records gets the warm nudge here, not the records-only refusal.
+        if ctx.mode == "mode_b_facts" and len(words) <= 3 and not RECORD_TRIGGERS.search(user_text):
+            return say(session.reply_lang, "voice_clarify"), session
         if ctx.empty and ctx.mode == "mode_a_rag":
-            words = user_text.strip().split()
             # If the user utterance is very short or fragmented, guide them warmly rather than cold library rejection
             # A full question that simply is not in the library gets the honest "I do not have that" reply.
             if len(words) <= 3 or session.channel == "voice":

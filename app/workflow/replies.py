@@ -80,7 +80,7 @@ MSG: dict[str, tuple[str, str]] = {
         "Haan ji, main aapko bilkul saaf sun sakti hoon! 😊 Main Saathi hoon. Main lab test book karne mein "
         "ya yoga aur diet jaise wellness sawaalon mein aapki madad kar sakti hoon. Batayiye, aaj kya karna chahenge?"),
     "voice_clarify": (
-        "I'm here! I didn't quite catch that. Would you like to book a lab test, check available packages, or ask about wellness?",
+        "Hello! 😊 I'm Saathi. I'm sorry, I didn't catch the rest of that. Are you looking to book a lab test, check available packages, or ask about wellness?",
         "Main sun rahi hoon! Mujhe theek se samajh nahi aaya. Kya aap lab test book karna chahte hain, ya koi wellness sawaal poochna chahte hain?"),
     "handoff": (
         "I've asked a care coordinator to step in, and they will follow up with you shortly. Thank you for your patience.",

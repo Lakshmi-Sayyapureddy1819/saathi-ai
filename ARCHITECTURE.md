@@ -243,7 +243,7 @@ Chat and voice share one workflow (`app/channels/voice_agent.py` drives `execute
 text-to-speech are the browser's Web Speech engines; the UI shows a real microphone level, live transcript, mute, interrupt
 (barge-in cancels speech without losing state), low-confidence guard and booking read-back. The backend `VoiceAgent` used by evals
 and `voice_demo.py` **simulates** STT/TTS, so its latency numbers exclude real audio. No telephony provider is integrated; the
-outbound reminder call is a simulation. The voice assistant is a separate screen from Mimi, who is only the chat persona.
+outbound reminder call is a simulation. The Talk to Mimi voice screen is separate from Mimi, who is only the chat persona.
 
 ### 6.7 Observability
 `app/observability/tracer.py` writes one span per node, tool and model call to `logs/traces.jsonl`, all sharing the turn's

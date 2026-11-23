@@ -226,7 +226,7 @@ test("voice: reduced motion disables orb animation", async ({ page }) => {
   expect(parseFloat(dur)).toBeLessThan(0.01);
 });
 
-test("voice orb: state follows the voice lifecycle; the voice assistant has no Mimi mascot", async ({ page }) => {
+test("voice orb: state follows the voice lifecycle; the Talk to Mimi screen has no Mimi mascot", async ({ page }) => {
   await page.addInitScript(installSpeechDoubles);
   await openVoice(page);
   const orb = page.getByTestId("voice-orb");

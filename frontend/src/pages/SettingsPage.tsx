@@ -67,7 +67,7 @@ export function SettingsPage() {
             </button>); })}
         </div>
         {!session && <p className="help" style={{ marginTop: 10 }}>Start a session first.</p>}
-        <div className="row-gap" style={{ marginTop: 14 }}><Button onClick={() => goto("voice")}>Voice assistant</Button></div>
+        <div className="row-gap" style={{ marginTop: 14 }}><Button onClick={() => goto("voice")}>Talk to Mimi</Button></div>
       </Card>
 
       <ConfirmationDialog open={askEnd} danger title="End this session?" confirmLabel="End session" onCancel={() => setAskEnd(false)}

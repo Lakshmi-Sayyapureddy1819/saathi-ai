@@ -16,7 +16,7 @@ const item = { hidden: { opacity: 0, y: 10 }, show: { opacity: 1, y: 0, transiti
 const greeting = (): string => { const h = new Date().getHours(); return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening"; };
 
 const ACTIONS: { id: RouteId; label: string; hint: string; icon: typeof Sparkles }[] = [
-  { id: "voice", label: "Voice assistant", hint: "Hands-free voice", icon: AudioLines },
+  { id: "voice", label: "Talk to Mimi", hint: "Hands-free voice", icon: AudioLines },
   { id: "chat", label: "Start a chat", hint: "Ask anything wellness", icon: MessageCircle },
   { id: "labs", label: "Book a lab test", hint: "Pick package and slot", icon: FlaskConical },
   { id: "bookings", label: "View bookings", hint: "Status and details", icon: CalendarCheck },
@@ -58,7 +58,7 @@ export function Overview() {
           <p className="lead">{session ? "How are you feeling today? Ask about yoga, sleep and diet, or book a lab test. I'm here to help, not to diagnose." : "Ask about yoga, diet and sleep, or book a lab test. Saathi is an AI assistant, not a doctor."}</p>
           <div className="row-gap">
             <Button variant="primary" size="lg" icon={MessageCircle} onClick={() => go("chat")} disabled={!session && !memberId}>Start a conversation</Button>
-            <Button size="lg" icon={AudioLines} onClick={() => go("voice")} disabled={!session && !memberId}>Voice assistant</Button>
+            <Button size="lg" icon={AudioLines} onClick={() => go("voice")} disabled={!session && !memberId}>Talk to Mimi</Button>
           </div>
         </div>
         {!session && <StartCard compact title="Choose who you are" />}

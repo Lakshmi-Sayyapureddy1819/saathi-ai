@@ -131,5 +131,5 @@ function Inner() {
 }
 
 export function VoicePage() {
-  return <SessionGate to="voice" what="the voice assistant"><Inner /></SessionGate>;
+  return <SessionGate to="voice" what="Talk to Mimi"><Inner /></SessionGate>;
 }

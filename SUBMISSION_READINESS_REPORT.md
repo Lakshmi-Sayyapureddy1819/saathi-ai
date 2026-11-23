@@ -162,7 +162,7 @@ cap is INR 500; with two full live evals added the margin is thin, so re-sum wit
 ## 13. Recommended demo sequence
 1. Start both servers. 2. Dashboard, pick Aarav. 3. Chat: Hinglish wellness question (citations, Mode A vs B toggle). 4. Medication
 and injection refusal. 5. Emergency (on a stack with alerts off). 6. Hinglish lab booking -> confirm -> history; repeat "yes" for
-idempotency. 7. `LAB_FAILURE_RATE=1` for handoff and coordinator approval. 8. Voice assistant page. 9. Insights. 10. Trace JSONL and `EVALS.md`.
+idempotency. 7. `LAB_FAILURE_RATE=1` for handoff and coordinator approval. 8. Talk to Mimi page. 9. Insights. 10. Trace JSONL and `EVALS.md`.
 
 ## 14. Git state (nothing committed or pushed by me)
 Final `git status`: modified `EVALS.md`, `SUBMISSION_READINESS_REPORT.md`; untracked

@@ -94,7 +94,7 @@ Not covered: Devanagari-script input; UI chrome (buttons, headings) is English o
 |---|---|
 | `#/` Overview | greeting, quick actions, assistant card, upcoming bookings, recent activity, wellness library; demo-member picker |
 | `#/chat` Chat with Mimi | conversation workspace: typed message cards (answer, safety notice, emergency, booking confirmed, handoff, coordinator decision), markdown, copy, timestamps, retry, scroll-to-latest, suggested prompts, inline booking wizard, Enter / Shift+Enter / `/` shortcuts |
-| `#/voice` Voice assistant (separate from Mimi, the chat persona) | immersive voice screen with 9 states (idle, connecting, listening, processing, thinking, speaking, interrupted, error, ended), real microphone-level orb, live transcript, mute, interrupt, low-confidence guard and read-back for bookings |
+| `#/voice` Talk to Mimi (voice screen, separate from the Mimi chat persona) | immersive voice screen with 9 states (idle, connecting, listening, processing, thinking, speaking, interrupted, error, ended), real microphone-level orb, live transcript, mute, interrupt, low-confidence guard and read-back for bookings |
 | `#/labs` Lab Tests | searchable catalogue (price, test count, fasting from the backend) and a 6-step booking: package, date, time, review, confirm, result |
 | `#/bookings` My Bookings | Upcoming / Pending approval / Completed / Cancelled, status timeline, confirmation dialog before cancelling |
 | `#/insights` Health Insights | program library from `/api/programs` (educational only; no health records are stored) |

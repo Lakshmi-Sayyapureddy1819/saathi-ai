@@ -8,7 +8,7 @@ export interface NavItem { id: RouteId; label: string; icon: LucideIcon; path: s
 export const NAV: NavItem[] = [
   { id: "overview", label: "Overview", icon: LayoutDashboard, path: "#/", mobile: true },
   { id: "chat", label: "Chat with Mimi", icon: MessageCircle, path: "#/chat", mobile: true },
-  { id: "voice", label: "Voice assistant", icon: Mic, path: "#/voice", mobile: true },
+  { id: "voice", label: "Talk to Mimi", icon: Mic, path: "#/voice", mobile: true },
   { id: "labs", label: "Lab Tests", icon: FlaskConical, path: "#/labs", mobile: true },
   { id: "bookings", label: "My Bookings", icon: CalendarCheck, path: "#/bookings", mobile: true },
   { id: "insights", label: "Health Insights", icon: Activity, path: "#/insights", mobile: false },
@@ -17,7 +17,7 @@ export const NAV: NavItem[] = [
 ];
 
 export const TITLES: Record<RouteId, string> = {
-  overview: "Overview", chat: "Chat with Mimi", voice: "Voice assistant", labs: "Lab Tests", bookings: "My Bookings",
+  overview: "Overview", chat: "Chat with Mimi", voice: "Talk to Mimi", labs: "Lab Tests", bookings: "My Bookings",
   insights: "Health Insights", support: "Care Team", settings: "Settings", coordinator: "Coordinator Console",
 };
 

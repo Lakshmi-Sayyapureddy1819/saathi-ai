@@ -22,7 +22,7 @@
 2. Design tokens, UI primitives, app shell (sidebar, topbar, mobile bottom nav)
 3. Overview + navigation + member gate
 4. Chat workspace (markdown, special message cards, retry/copy, prompts)
-5. Voice assistant (orb, 9 states, transcript, readback, low-confidence guard)
+5. Talk to Mimi (orb, 9 states, transcript, readback, low-confidence guard)
 6. Lab discovery + 6-step booking
 7. Bookings page, support page, coordinator console
 8. Responsive + motion polish, reduced motion

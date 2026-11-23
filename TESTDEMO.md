@@ -72,7 +72,7 @@ Each step lists what you should see. Steps map 1:1 to tests in `frontend/e2e/`.
    sends a real message through the workflow.
 3. **Grounded response.** Ask `What yoga helps with exhaustion?`. With a model key you get a grounded, cited answer;
    without, a `[MOCK]` reply plus a visible "Demo mode" badge. Try `Mujhe bahut thakan rehti hai, kya yoga karun?` for Hinglish.
-4. **Voice.** Open **Voice assistant** -> **Start voice conversation**. Allow the microphone.
+4. **Voice.** Open **Talk to Mimi** -> **Start voice conversation**. Allow the microphone.
 5. **States.** Watch the badge and orb: *Ready to listen* -> *Connecting* -> *Listening* (orb follows your real mic
    level) -> *Processing* -> *Thinking* -> *Speaking* (tap the hand to **Interrupt** -> *Interrupted*) -> *Listening*.
    **Mute** pauses the mic; **End** shows *Conversation ended*. The transcript shows exactly what was heard and replied.
