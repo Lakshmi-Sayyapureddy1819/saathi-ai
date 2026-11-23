@@ -16,7 +16,7 @@ unless marked otherwise. Labels: **VERIFIED**, **IMPLEMENTED BUT NOT LIVE-VERIFI
 ## 2. Unit and integration tests (not assignment evaluation)
 | Suite | Result |
 |---|---|
-| Backend `python -m pytest tests -q`, **no exclusions** | **526 passed, 0 failed, 0 skipped** (36 test files). Final code: 525, 525, then 526 after the test replacement below |
+| Backend `python -m pytest tests -q`, **no exclusions** | **554 passed, 0 failed** (current count, re-run 2026-11-23 after the date-parsing fix). Earlier counts in this report (526, 529) were correct when written and are kept in the dated sections below |
 | Frontend `tsc --noEmit` | clean |
 | Frontend `vitest run` | **31 passed** |
 | Browser end-to-end, full suite (6 spec files, real backends on isolated ports, mock LLM) | **38 passed** in 7.2 min |
