@@ -424,7 +424,12 @@ def main(promote: bool = False) -> None:
     for case in golden:
         # Multi-turn sequences (e.g. LB-SEQ-007-1..3) share one session; every other case is isolated.
         seq_key = case["case_id"].rsplit("-", 1)[0] if "-SEQ-" in case["case_id"] else case["case_id"]
-        session = seq_sessions.setdefault(seq_key, new_session(seq_key))
+        if seq_key not in seq_sessions:
+            seq_sessions[seq_key] = new_session(seq_key)
+            # Unscored setup turns (e.g. a request that lists packages) so the scored turn has its context.
+            for setup in case.get("setup_inputs", []):
+                _, seq_sessions[seq_key] = execute_turn(setup, seq_sessions[seq_key], graph=graph)
+        session = seq_sessions[seq_key]
         response, session = execute_turn(case["user_input"], session, graph=graph)
         lang_counts[session.reply_lang] += 1
         spans = spans_for(session.trace_id)

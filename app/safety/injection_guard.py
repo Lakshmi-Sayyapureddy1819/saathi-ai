@@ -26,14 +26,17 @@ _W = r"(?:\W+\w+){0,4}?\W+"  # up to four filler words between two key words ("i
 
 _RULES: Tuple[Tuple[InjectionRule, Pattern[str]], ...] = (
     ("instruction_override", re.compile(
-        rf"\b(ignore|disregard|forget|override|bypass)\b{_W}(instructions?|rules?|prompts?|guidelines?|guardrails?)\b",
+        rf"\b(ignore|disregard|forget|override|bypass)\b{_W}"
+        r"(instructions?|rules?|prompts?|guidelines?|guardrails?|restrictions?|safeguards?|"
+        r"safety\s+(rules|restrictions|guidelines|filters))\b",
         re.I)),
     ("instruction_override", re.compile(
         r"\b(sab|saare|saari|pichle|pehle\s+ke|apne|aapke)\s+(rules|instructions|nirdesh|niyam)\s+"
         r"(bhool|bhul|ignore|chhod|tod)", re.I)),
     ("prompt_disclosure", re.compile(
         rf"\b(reveal|print|repeat|dump|leak|output|display)\b{_W}"
-        r"(system\s+prompt|your\s+prompt|hidden\s+prompt|initial\s+prompt|your\s+instructions)", re.I)),
+        r"(system\s+prompt|your\s+prompt|hidden\s+prompt|initial\s+prompt|your\s+instructions|"
+        r"(internal|hidden|secret|original|underlying)\s+(instructions?|prompts?|rules))", re.I)),
     ("prompt_disclosure", re.compile(
         r"\b(apne|aapke)\s+(rules|instructions|nirdesh)\s+(batao|bataiye|dikhao|dikhaiye)", re.I)),
     ("persona_override", re.compile(

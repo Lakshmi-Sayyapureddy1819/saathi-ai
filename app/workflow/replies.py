@@ -73,6 +73,13 @@ MSG: dict[str, tuple[str, str]] = {
         "coordinator or help you book a lab package.",
         "Maaf kijiye, yeh hamari program library mein mujhe nahi mila. Aap chahein toh hum aapko care coordinator "
         "se jod dete hain, ya lab package book karne mein madad kar dete hain."),
+    "out_of_scope": (
+        "I'm sorry, I can only help with your Saathi program (yoga practices, schedules and diet guidance), wellness "
+        "questions, and lab test bookings. I can't answer questions outside these, such as general topics like "
+        "'what is AI?'. How can I help you with your program or a lab test?",
+        "Maaf kijiye, main sirf aapke Saathi program (yoga, schedule aur diet guidance), wellness sawaalon aur lab "
+        "test booking mein madad kar sakti hoon. Iske bahar ke sawaal, jaise 'AI kya hai?', ka jawab main nahi de "
+        "sakti. Aap program ya lab test ke baare mein kya janna chahenge?"),
     "voice_check": (
         "Yes, I can hear you loud and clear! 😊 I'm Saathi, your care companion. I can help you book a lab test "
         "(like a thyroid screening or full body checkup) or answer questions on diet, yoga, and sleep. "
@@ -228,4 +235,6 @@ def is_llm_down_reply(text: str) -> bool:
 def is_no_context_reply(text: str) -> bool:
     """True for the 'not in our program library' reply (no retrieval hit, so no model answer was attempted)."""
     t = text.lstrip()
-    return t.startswith(_lead("coach_empty", 0)) or t.startswith(_lead("coach_empty", 1)) or "I don't have" in t
+    return (t.startswith(_lead("coach_empty", 0)) or t.startswith(_lead("coach_empty", 1))
+            or t.startswith(_lead("out_of_scope", 0)) or t.startswith(_lead("out_of_scope", 1))
+            or "I don't have" in t)
