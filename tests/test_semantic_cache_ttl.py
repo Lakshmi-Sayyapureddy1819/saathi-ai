@@ -288,14 +288,14 @@ def test_false_hit_rate_measurement_at_threshold_088(embed):
 
 
 
-def test_redis_url_is_derived_from_upstash_rest_credentials(monkeypatch):
-    from app.grounding.semantic_cache import redis_url_from_env
+def test_redis_url_comes_only_from_redis_url_and_upstash_uses_rest(monkeypatch):
+    from app.grounding.semantic_cache import redis_url_from_env, rest_creds_from_env
     for k in ("REDIS_URL", "UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN"):
         monkeypatch.delenv(k, raising=False)
     assert redis_url_from_env() == ""
     monkeypatch.setenv("UPSTASH_REDIS_REST_URL", "https://eager-cat-1234.upstash.io/")
-    assert redis_url_from_env() == ""                                   # a URL without the token is not usable
     monkeypatch.setenv("UPSTASH_REDIS_REST_TOKEN", "tok")
-    assert redis_url_from_env() == "rediss://default:tok@eager-cat-1234.upstash.io:6379"
+    assert redis_url_from_env() == ""                                   # REST credentials are never turned into rediss://
+    assert rest_creds_from_env() == ("https://eager-cat-1234.upstash.io", "tok")
     monkeypatch.setenv("REDIS_URL", "redis://127.0.0.1:6379/0")        # an explicit REDIS_URL always wins
     assert redis_url_from_env() == "redis://127.0.0.1:6379/0"

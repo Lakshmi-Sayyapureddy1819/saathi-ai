@@ -1,6 +1,6 @@
 """Embedding-based semantic cache with a time-to-live, an optional Redis backend and measured statistics.
 
-Embeddings come from the Gemini embeddings REST API when GEMINI_API_KEY is set. Without a key the in-memory cache
+Embeddings come from the OpenAI embeddings API (text-embedding-3-small) when OPENAI_API_KEY is set. Without a key the in-memory cache
 degrades to token-overlap similarity and reports `backend="jaccard-fallback"`. Queries containing PII-ish /
 transactional content bypass the cache entirely.
 
@@ -9,7 +9,8 @@ expiry). An expired entry is never served, so an answer cannot outlive a change 
 TTL. Entries are also namespaced by prompt version and embedding model: a new prompt or embedding model starts with an
 empty cache instead of serving answers produced by the old one.
 
-Redis (optional, set REDIS_URL): shared across processes and restarts, with native key expiry (SET ... EX). Redis only
+Redis (optional): REDIS_URL (redis-py) or, if that is unset, the Upstash REST API (UPSTASH_REDIS_REST_URL + token, plain
+HTTPS). Shared across processes and restarts, with native key expiry (SET ... EX). Redis only
 ever receives the embedding and the answer, never the member's question text (a hash is the key), and only generic
 Mode-A answers are cached at all (see graph.py). Redis problems never break a turn: any error is counted, logged,
 and the cache falls back to the in-process store; a failed connection is not retried for 30 s.
@@ -32,7 +33,7 @@ from typing import Callable, List, Optional
 import requests
 from pydantic import BaseModel, ConfigDict
 
-EMBED_MODEL = os.getenv("EMBED_MODEL", "gemini-embedding-001")
+EMBED_MODEL = os.getenv("OPENAI_EMBED_MODEL", "text-embedding-3-small")  # also the cache namespace (see graph.py)
 DEFAULT_TTL_S = int(os.getenv("SEMANTIC_CACHE_TTL_SECONDS", "3600"))
 DEFAULT_THRESHOLD = float(os.getenv("SEMANTIC_CACHE_THRESHOLD", "0.88"))
 REDIS_MAX_ENTRIES = 300  # each Redis entry holds a 3072-float embedding; the lookup scans them all
@@ -61,17 +62,69 @@ class CacheStats(BaseModel):
 
 
 def redis_url_from_env() -> str:
-    """REDIS_URL if set; otherwise derive it from Upstash's REST credentials. An Upstash REST token is also the password
-    of the database's TLS Redis endpoint, so UPSTASH_REDIS_REST_URL (https://<host>) + UPSTASH_REDIS_REST_TOKEN give
-    rediss://default:<token>@<host>:6379."""
-    url = os.getenv("REDIS_URL", "").strip()
-    if url:
-        return url
-    rest, token = os.getenv("UPSTASH_REDIS_REST_URL", "").strip(), os.getenv("UPSTASH_REDIS_REST_TOKEN", "").strip()
-    if rest and token:
-        host = re.sub(r"^https?://", "", rest).strip("/")
-        return f"rediss://default:{token}@{host}:6379"
-    return ""
+    """REDIS_URL only (redis-py). Upstash REST credentials are NOT turned into a rediss:// URL: that TLS port (6379) can be
+    unreachable from the host while the REST endpoint works, so REST is used instead (see rest_creds_from_env)."""
+    return os.getenv("REDIS_URL", "").strip()
+
+
+def rest_creds_from_env() -> tuple[str, str]:
+    """Upstash REST URL and token from the environment, or ("", "") if either is missing."""
+    rest = os.getenv("UPSTASH_REDIS_REST_URL", "").strip().rstrip("/")
+    token = os.getenv("UPSTASH_REDIS_REST_TOKEN", "").strip()
+    return (rest, token) if rest and token else ("", "")
+
+
+class UpstashRest:
+    """Minimal Upstash REST client with the redis-py methods the cache uses.
+
+    Plain HTTPS (port 443), one POST of a JSON command array per call. It is used when REDIS_URL is not set, because the
+    TLS Redis port (6379) can be unreachable from the host while the REST endpoint works. Error text is never logged,
+    because it could echo the token.
+    """
+
+    def __init__(self, url: str, token: str, timeout: float = 2.0):
+        self._url, self._token, self._timeout = url, token, timeout
+
+    def _cmd(self, *args):
+        r = requests.post(self._url, headers={"Authorization": f"Bearer {self._token}"},
+                          json=list(args), timeout=self._timeout)
+        body = r.json() if r.content else {}
+        if r.status_code != 200 or "error" in body:
+            raise RuntimeError(f"Upstash REST returned HTTP {r.status_code}")
+        return body.get("result")
+
+    def ping(self) -> bool:
+        if self._cmd("PING") != "PONG":
+            raise RuntimeError("Upstash REST did not answer PING")
+        return True
+
+    def zrange(self, name: str, start: int, end: int) -> list:
+        return self._cmd("ZRANGE", name, start, end) or []
+
+    def mget(self, keys: list) -> list:
+        return (self._cmd("MGET", *keys) or []) if keys else []
+
+    def zrem(self, name: str, *members: str) -> None:
+        if members:
+            self._cmd("ZREM", name, *members)
+
+    def set(self, key: str, value: str, ex: Optional[int] = None) -> None:
+        args = ["SET", key, value] + (["EX", int(ex)] if ex else [])
+        self._cmd(*args)
+
+    def zadd(self, name: str, mapping: dict) -> None:
+        for member, score in mapping.items():
+            self._cmd("ZADD", name, score, member)
+
+    def expire(self, name: str, seconds: int) -> None:
+        self._cmd("EXPIRE", name, int(seconds))
+
+    def zcard(self, name: str) -> int:
+        return int(self._cmd("ZCARD", name) or 0)
+
+    def delete(self, *keys: str) -> None:
+        if keys:
+            self._cmd("DEL", *keys)
 
 
 def _cosine(a: List[float], b: List[float]) -> float:
@@ -81,19 +134,20 @@ def _cosine(a: List[float], b: List[float]) -> float:
 
 
 def _embed(text: str) -> Optional[List[float]]:
-    key = os.getenv("GEMINI_API_KEY")
+    """OpenAI embedding of the query (same provider and model as the library retriever). None if no key or on failure."""
+    key = os.getenv("OPENAI_API_KEY")
     if not key:
         return None
     try:
         r = requests.post(
-            f"https://generativelanguage.googleapis.com/v1beta/models/{EMBED_MODEL}:embedContent",
-            headers={"x-goog-api-key": key},
-            json={"content": {"parts": [{"text": text}]}}, timeout=10)
+            "https://api.openai.com/v1/embeddings",
+            headers={"Authorization": f"Bearer {key}"},
+            json={"model": EMBED_MODEL, "input": text}, timeout=10)
         if r.status_code == 200:
-            return r.json()["embedding"]["values"]
-        logging.warning(f"Embedding API returned {r.status_code}")
-    except Exception as e:
-        logging.warning(f"Embedding failed: {e}")
+            return r.json()["data"][0]["embedding"]
+        logging.warning("Embedding API returned HTTP %s", r.status_code)
+    except Exception as e:  # noqa: BLE001 - an embedding outage must not break a turn
+        logging.warning("Embedding failed: %s", type(e).__name__)
     return None
 
 
@@ -129,6 +183,8 @@ class SemanticCache:
         self._backend = "embedding"
         self._redis = redis_client
         self._redis_url = redis_url if redis_url is not None else redis_url_from_env()
+        # Upstash REST is the fallback when no REDIS_URL is set and no client was injected.
+        self._rest_url, self._rest_token = ("", "") if (self._redis_url or redis_client is not None) else rest_creds_from_env()
         self._redis_retry_at = 0.0
         self._redis_connected = redis_client is not None
 
@@ -160,15 +216,21 @@ class SemanticCache:
     def _rkey(self, query: str) -> str:
         return f"semcache:{self.namespace}:e:{hashlib.sha256(query.encode('utf-8')).hexdigest()[:32]}"
 
+    def _configured(self) -> bool:
+        return bool(self._redis_url or self._rest_url) or self._redis is not None
+
     def _client(self):
         """The Redis client, connecting lazily; None if not configured or recently failed."""
         if self._redis is not None:
             return self._redis
-        if not self._redis_url or self._clock() < self._redis_retry_at:
+        if not (self._redis_url or self._rest_url) or self._clock() < self._redis_retry_at:
             return None
         try:
-            import redis  # optional dependency
-            client = redis.Redis.from_url(self._redis_url, socket_timeout=0.5, socket_connect_timeout=0.5)
+            if self._redis_url:
+                import redis  # optional dependency
+                client = redis.Redis.from_url(self._redis_url, socket_timeout=0.5, socket_connect_timeout=0.5)
+            else:
+                client = UpstashRest(self._rest_url, self._rest_token)
             client.ping()
             self._redis, self._redis_connected = client, True
             return client
@@ -180,7 +242,7 @@ class SemanticCache:
         self.redis_errors += 1
         self._redis_connected = False
         self._redis_retry_at = self._clock() + REDIS_RETRY_AFTER_S
-        if self._redis_url:
+        if self._redis_url or self._rest_url:
             self._redis = None  # reconnect lazily after the retry delay
         logging.warning("Semantic cache: Redis unavailable (%s); using the in-process cache for %.0fs.",
                         type(exc).__name__, REDIS_RETRY_AFTER_S)
@@ -244,10 +306,10 @@ class SemanticCache:
                 self.bypassed += 1
                 return None
             self._purge_expired()
-            if not self.cache and not self._redis_connected and not self._redis_url and not self._redis:
+            if not self.cache and not self._redis_connected and not self._configured():
                 return None
             # Exact match fast path for in-memory cache: instantaneous return when Redis is not configured
-            if not (self._redis_connected or self._redis_url or self._redis) and query in self.cache:
+            if not (self._redis_connected or self._configured()) and query in self.cache:
                 self.hits += 1
                 return self.cache[query][1]
         qv = _embed(query)
@@ -298,7 +360,7 @@ class SemanticCache:
                 false_hits=0, ttl_seconds=self.ttl_seconds,
                 store="redis" if self._redis_connected else "memory", entries=len(self.cache),
                 expired=self.expired, redis_errors=self.redis_errors,
-                redis_configured=bool(self._redis_url) or self._redis is not None)
+                redis_configured=self._configured())
 
     def evaluate_false_hits(self, labelled_pairs: List[tuple[str, str, bool]]) -> float:
         """labelled_pairs: (query_a, query_b, same_intent). Returns the false-hit rate at the current
