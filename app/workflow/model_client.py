@@ -95,6 +95,25 @@ _CONSEC: dict[str, int] = {}
 _OPEN_UNTIL: dict[str, float] = {}
 
 
+def gemini_safety_config():
+    """Gemini's built-in safety filters, set explicitly on every Gemini request.
+
+    HARM_CATEGORY_JAILBREAK is Gemini's own jailbreak detector (the model-side layer behind app/safety/injection_guard.py).
+    DANGEROUS_CONTENT is relaxed to BLOCK_ONLY_HIGH so medicine and lab-test wording is not blocked as "dangerous".
+    Thresholds are a judgement call: tune them here, not per call.
+    """
+    from google.genai import types as gtypes
+    thresholds = {
+        gtypes.HarmCategory.HARM_CATEGORY_HARASSMENT: gtypes.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+        gtypes.HarmCategory.HARM_CATEGORY_HATE_SPEECH: gtypes.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+        gtypes.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: gtypes.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+        gtypes.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: gtypes.HarmBlockThreshold.BLOCK_ONLY_HIGH,
+        gtypes.HarmCategory.HARM_CATEGORY_JAILBREAK: gtypes.HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
+    }
+    return gtypes.GenerateContentConfig(
+        safety_settings=[gtypes.SafetySetting(category=c, threshold=t) for c, t in thresholds.items()])
+
+
 def _is_transient(exc: BaseException) -> bool:
     """Worth one quick retry: a dropped connection, rate limit (429) or provider 5xx. Not a timeout (retrying a
     15 s hang doubles the member's wait) and not a 4xx such as a rejected key."""
@@ -306,7 +325,8 @@ class ModelClient:
             from app.workflow.gateway import run_coro_sync
 
             gemini_llm = Gemini(model=model_id)
-            req = LlmRequest(contents=[Content(role="user", parts=[Part(text=prompt)])], model=model_id)
+            req = LlmRequest(contents=[Content(role="user", parts=[Part(text=prompt)])], model=model_id,
+                             config=gemini_safety_config())
 
             async def _call_gemini():
                 text_parts = []
