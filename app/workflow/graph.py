@@ -42,6 +42,19 @@ wellness_cache.set_namespace(f"{PROMPT_VERSION}:{EMBED_MODEL}")
 Route = Literal["node_program_coach", "node_lab_booking", "node_explain_report"]
 NodeFn = Callable[[str, UserSessionState], Tuple[str, UserSessionState]]
 
+_QUESTION_START = re.compile(
+    r"^\s*(what|who|whom|whose|which|how|why|when|where|is|are|can|could|do|does|tell|explain|define|describe|"
+    r"kya|kaun|kaise|kyun|kyu|kab|kahan|kitna|kitni|batao|bataiye)\b", re.I)
+
+
+def is_question(text: str) -> bool:
+    """A real question or request (not a bare time, number or fragment). Used to pick the scope reply over the nudge."""
+    t = text.strip()
+    if len(re.findall(r"[A-Za-z]", t)) < 3:  # "08:30 am ?" has only 2 letters: a fragment, not a question
+        return False
+    return bool(_QUESTION_START.search(t)) or t.endswith("?")
+
+
 COACH_TRIGGERS = re.compile(r"\b(yoga|diet|food|lifestyle|pranayama|breathing|kriya|meditation|asana|namaskar|"
                             r"kapalbhati|anulom|vilom|fayde|thakan|stress|sleep|neend|nutrition|exercise|workout|"
                             r"walk|hydration|water|paani|weight|routine|wellness|relaxation|fatigue)\b", re.I)
@@ -305,6 +318,11 @@ class WorkflowGraph:
         self.enter_route(session, route)
         return self._goto(route, user_text, session)
 
+    def _in_scope(self, user_text: str) -> bool:
+        """Keyword scope check: wellness, lab, booking or member-record vocabulary."""
+        return bool(COACH_TRIGGERS.search(user_text) or LAB_TRIGGERS.search(user_text)
+                    or RECORD_TRIGGERS.search(user_text) or self.lab_tools.mentions_test(user_text))
+
     def node_program_coach(self, user_text: str, session: UserSessionState) -> Tuple[str, UserSessionState]:
         tid = self._tid(session)
         session.active_node = "node_program_coach"
@@ -327,14 +345,25 @@ class WorkflowGraph:
         planner = None if session.channel == "voice" else self.planner
         ctx = get_grounding(user_text, session, tid, self.engine, planner, history)
         if ctx.skipped:
+            # A real question outside the program scope gets the scope statement; a fragment gets the warm nudge.
+            if is_question(user_text):
+                return say(session.reply_lang, "out_of_scope"), session
             few = len(user_text.split()) <= 3  # fragments get a warm nudge; a full question gets the honest answer
             return say(session.reply_lang, "voice_clarify" if few else "coach_empty"), session
         words = user_text.strip().split()
+        # Mode B: a question with no wellness, lab or member-record vocabulary, or that no backend tool can answer,
+        # gets the scope statement. Keywords decide it deterministically: the default tools are never empty, and the
+        # planner's choice of tools varies by model.
+        if ctx.mode == "mode_b_facts" and is_question(user_text) and (ctx.empty or not self._in_scope(user_text)):
+            return say(session.reply_lang, "out_of_scope"), session
         # Mode B always returns the profile and bookings, so it is never "empty": a short fragment that does not ask
         # about the member's records gets the warm nudge here, not the records-only refusal.
         if ctx.mode == "mode_b_facts" and len(words) <= 3 and not RECORD_TRIGGERS.search(user_text):
             return say(session.reply_lang, "voice_clarify"), session
         if ctx.empty and ctx.mode == "mode_a_rag":
+            # Off-topic questions ("what is AI?") say what this assistant covers, on voice too.
+            if is_question(user_text):
+                return say(session.reply_lang, "out_of_scope"), session
             # If the user utterance is very short or fragmented, guide them warmly rather than cold library rejection
             # A full question that simply is not in the library gets the honest "I do not have that" reply.
             if len(words) <= 3 or session.channel == "voice":

@@ -462,6 +462,7 @@
   {
     "case_id": "ASR-012",
     "category": "voice_asr_perturbations",
+    "setup_inputs": ["I need a blood test package"],
     "user_input": "the second option",
     "expected_intent": "node_lab_booking",
     "expected_safety_status": "GREEN_NORMAL",
