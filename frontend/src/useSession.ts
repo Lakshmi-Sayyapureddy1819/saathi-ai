@@ -96,6 +96,13 @@ export function useSession() {
     catch (e) { setNotice(e instanceof ApiError ? e.message : "Couldn't switch the answer mode."); }
   }, [busy]);
 
+  // Demo: runs the scripted reminder call. Returns the result for the page to show; bookings refresh by the poll.
+  const reminderCall = useCallback(async () => {
+    const s = stored.current;
+    if (!s) throw new ApiError(0, "Start a session first.");
+    return api.reminderCall(s.id, s.token);
+  }, []);
+
   const end = useCallback(async () => {
     const s = stored.current;
     clear();
@@ -103,5 +110,5 @@ export function useSession() {
   }, [clear]);
 
   const messages: ChatMessage[] = pending ? [...(session?.messages ?? []), pending] : session?.messages ?? [];
-  return { session, messages, busy, starting, restoring, notice, setNotice, error, start, send, retry, dismissError, end, setGrounding };
+  return { session, messages, busy, starting, restoring, notice, setNotice, error, start, send, retry, dismissError, end, setGrounding, reminderCall };
 }

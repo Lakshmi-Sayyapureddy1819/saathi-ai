@@ -12,6 +12,7 @@ import { Overview } from "./pages/Overview";
 import { SettingsPage } from "./pages/SettingsPage";
 import { SupportPage } from "./pages/SupportPage";
 import { VoicePage } from "./pages/VoicePage";
+import { ReminderCallPage } from "./pages/ReminderCallPage";
 
 function Routes() {
   const route = useRoute();
@@ -23,6 +24,7 @@ function Routes() {
         route === "overview" ? <Overview />
           : route === "chat" ? <ChatPage />
             : route === "voice" ? <VoicePage />
+              : route === "reminder" ? <ReminderCallPage />
               : route === "labs" ? <LabsPage />
                 : route === "bookings" ? <BookingsPage />
                   : route === "insights" ? <InsightsPage />

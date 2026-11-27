@@ -142,3 +142,30 @@ class OutboundCall:
             outcome = "unfinished"
         return OutboundCallResult(outcome=outcome, trace_id=self.trace_id, transcript=self.transcript,
                                   booking_ids=new)
+
+
+# The member side of the demo call. It is scripted: the simulated dialler has no real speech input. The member takes
+# the first slot the agent actually offers, so a slot taken by an earlier booking does not break the demo.
+_OFFERED_SLOT = re.compile(r"^- (\d{1,2}:\d{2} [AP]M)\s*$", re.M)
+
+
+def first_offered_slot(agent_text: str) -> Optional[str]:
+    """The first '- HH:MM AM/PM' line of an agent message that lists slots, or None."""
+    m = _OFFERED_SLOT.search(agent_text)
+    return m.group(1) if m else None
+
+
+def run_scripted_call(member: MemberProfile) -> OutboundCallResult:
+    """One reminder call on the simulated telephony with scripted member replies. Silent (no TTS printing)."""
+    working = member.model_copy(deep=True)
+    before = list(working.past_bookings)
+    call = OutboundCall(working, agent=VoiceAgent(verbose=False, tts_char_delay=0))
+    call.start()
+    call.reply("haan kar do")
+    call.reply("kal subah")
+    if not call.finished:
+        slot = first_offered_slot(call.transcript[-1]) or "09:00 AM"
+        call.reply(slot)
+    if not call.finished:
+        call.reply("yes confirm")
+    return call.result(before)

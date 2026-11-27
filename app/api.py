@@ -44,8 +44,9 @@ from app.api_schemas import (
     MAX_MESSAGE_CHARS, ApprovalItem, ApprovalList, BookingConfirmation, BookingItem, BookingView, ChatMessage, ConfigView,
     CoordinatorDecisionRequest, CreateSessionRequest, DateOption, DeleteResponse, EmergencyView, GroundingView, HandoffView,
     MemberPublic, MessageKind, PackageOption, ProgramSummary, SendMessageRequest, SessionCreated, SessionView,
-    SetGroundingRequest, ConversationMetricsView, TurnMetricsView,
+    SetGroundingRequest, ConversationMetricsView, TurnMetricsView, ReminderCallView,
 )
+from app.channels.outbound import run_scripted_call
 from app.config import Readiness, get_settings, readiness
 from app.observability.tracer import flush, new_trace_id, span
 from app.persistence.store import StoredSession, get_store
@@ -426,6 +427,24 @@ _MODE_NOTE = {
     "mode_a_rag": "Answer mode: Library search (Mode A, agentic RAG). Mimi now decides what to look up in the wellness library and cites the documents she used.",
     "mode_b_facts": "Answer mode: My records only (Mode B, no retrieval). Mimi now answers only from your profile, bookings, schedule and the lab catalogue, and says \"I don't have that information\" otherwise.",
 }
+
+
+@app.post("/api/sessions/{session_id}/reminder-call", response_model=ReminderCallView)
+def start_reminder_call(session_id: str, authorization: Optional[str] = Header(default=None)) -> ReminderCallView:
+    """Demo: the agent phones this member about a pending checkup (simulated telephony, scripted replies).
+    A booked call adds the booking to the member's bookings, like a chat booking does."""
+    rec = _get_record(session_id, authorization)
+    if rec.pending_interrupt_id:
+        raise HTTPException(409, "This session is waiting for a care coordinator to decide on your booking.")
+    res = run_scripted_call(rec.session.member)
+    if res.booking_ids:
+        known = set(rec.session.member.past_bookings)
+        added = [b for b in res.booking_ids if b not in known]
+        rec.session.member = rec.session.member.model_copy(
+            update={"past_bookings": rec.session.member.past_bookings + added})
+        _persist(rec)
+    return ReminderCallView(outcome=res.outcome, transcript=res.transcript, booking_ids=res.booking_ids,
+                            trace_id=res.trace_id)
 
 
 @app.post("/api/sessions/{session_id}/grounding", response_model=SessionView)

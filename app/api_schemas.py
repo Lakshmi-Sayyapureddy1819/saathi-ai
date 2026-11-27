@@ -199,3 +199,12 @@ class ApprovalItem(_Frozen):
 
 class ApprovalList(_Frozen):
     items: List[ApprovalItem]
+
+
+# ---- reminder call (simulated telephony; scripted member replies) ----
+class ReminderCallView(_Frozen):
+    outcome: Literal["booked", "declined", "no_pending_checkup", "unfinished"]
+    transcript: List[str]
+    booking_ids: List[str]
+    trace_id: str
+    simulated: bool = True
