@@ -4,6 +4,15 @@ export type MessageKind =
   | "answer" | "safety_notice" | "emergency" | "booking_confirmed" | "handoff" | "handoff_resolved";
 export type Triage = "GREEN_NORMAL" | "YELLOW_WARNING" | "RED_CRISIS";
 
+// Mirrors ReminderCallView in app/api_schemas.py.
+export interface ReminderCallResult {
+  outcome: "booked" | "declined" | "no_pending_checkup" | "unfinished";
+  transcript: string[];
+  booking_ids: string[];
+  trace_id: string;
+  simulated: boolean;
+}
+
 export interface PackageOption {
   package_id: string; name: string; price_inr: number; test_count: number;
   fasting_required: boolean; fasting_hours: number;
